@@ -151,44 +151,45 @@ export function QuoteForm({ onSubmit, initialData }: QuoteFormProps) {
 
                         <div className="space-y-3">
                             {fields.map((field, index) => (
-                                <div key={field.id} className="flex gap-2 items-start">
+                                <div key={field.id} className="flex gap-3 items-start">
+                                    {/* Descrizione */}
                                     <input
                                         {...register(`services.${index}.description` as const)}
                                         className="flex-1 px-4 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-transparent"
                                         placeholder={`Descrizione servizio ${index + 1}`}
                                     />
 
-                                    {/* Costo + Checkbox IVA */}
-                                    <div className="w-40">
-                                        <div className="relative">
-                                            <input
-                                                {...register(`services.${index}.cost` as const, {
-                                                    setValueAs: (v) => String(v ?? '').replace(/[^\d.,]/g, ''),
-                                                    pattern: {
-                                                        value: /^[0-9.,]*$/,
-                                                        message: 'Inserisci solo numeri'
-                                                    }
-                                                })}
-                                                inputMode="decimal"
-                                                className="w-40 px-4 py-2 text-right border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-transparent"
-                                                placeholder="0,00"
-                                            />
-                                            <span className="absolute right-3 top-1/2 -translate-y-1/2 text-gray-500 select-none">
-                        €
-                      </span>
-                                        </div>
-
-                                        <label className="flex items-center gap-2 mt-2 select-none">
-                                            <input
-                                                type="checkbox"
-                                                {...register(`services.${index}.vat` as const)}
-                                                className="h-4 w-4"
-                                                defaultChecked
-                                            />
-                                            <span className="text-sm text-gray-600">Applica IVA</span>
-                                        </label>
+                                    {/* Costo */}
+                                    <div className="relative w-36">
+                                        <input
+                                            {...register(`services.${index}.cost` as const, {
+                                                setValueAs: (v) => String(v ?? '').replace(/[^\d.,]/g, ''),
+                                                pattern: {
+                                                    value: /^[0-9.,]*$/,
+                                                    message: 'Inserisci solo numeri'
+                                                }
+                                            })}
+                                            inputMode="decimal"
+                                            className="w-full px-4 py-2 text-right border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-transparent"
+                                            placeholder="0,00  "
+                                        />
+                                        <span className="absolute right-3 top-1/2 -translate-y-1/2 text-gray-500 select-none">
+      €
+    </span>
                                     </div>
 
+                                    {/* Checkbox IVA */}
+                                    <label className="flex items-center gap-2 mt-1 select-none whitespace-nowrap">
+                                        <input
+                                            type="checkbox"
+                                            {...register(`services.${index}.vat` as const)}
+                                            className="h-4 w-4"
+                                            defaultChecked
+                                        />
+                                        <span className="text-sm text-gray-700">IVA</span>
+                                    </label>
+
+                                    {/* Rimuovi */}
                                     {fields.length > 1 && (
                                         <button
                                             type="button"
@@ -200,6 +201,7 @@ export function QuoteForm({ onSubmit, initialData }: QuoteFormProps) {
                                         </button>
                                     )}
                                 </div>
+
                             ))}
 
                             <button
