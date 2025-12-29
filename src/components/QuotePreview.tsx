@@ -1,6 +1,6 @@
 import { useRef } from 'react';
 import { QuoteData } from '../types/quote';
-import { ArrowLeft, Printer, Download } from 'lucide-react';
+import { ArrowLeft, Download } from 'lucide-react';
 import logo from '../image/logo.png';
 import firma from '../image/firma.png';
 import { toPng } from 'html-to-image';
@@ -10,13 +10,21 @@ interface QuotePreviewProps {
     data: QuoteData;
     onBack: () => void;
 }
-//genero preventivo
+
 export function QuotePreview({ data, onBack }: QuotePreviewProps) {
     const previewRef = useRef<HTMLDivElement>(null);
 
+    // ✅ per evitare che luogo/data/firma vengano spezzati tra 2 pagine nel PDF
+    const footerRef = useRef<HTMLDivElement>(null);
+    const footerSpacerRef = useRef<HTMLDivElement>(null);
+
     const formatDate = (dateString: string) => {
         const date = new Date(dateString);
-        return date.toLocaleDateString('it-IT', { day: '2-digit', month: '2-digit', year: 'numeric' });
+        return date.toLocaleDateString('it-IT', {
+            day: '2-digit',
+            month: '2-digit',
+            year: 'numeric',
+        });
     };
 
     const parseItalianNumber = (raw: string) => {
@@ -36,7 +44,7 @@ export function QuotePreview({ data, onBack }: QuotePreviewProps) {
         return formatEuroFromNumber(n);
     };
 
-    // IVA 20% solo su servizi spuntati
+    // ✅ IVA 20% solo su servizi spuntati
     const VAT_RATE = 0.2;
     const sums = (data.services ?? []).reduce(
         (acc, s) => {
@@ -54,57 +62,81 @@ export function QuotePreview({ data, onBack }: QuotePreviewProps) {
     const iva = imponibileIva * VAT_RATE;
     const totaleConIva = imponibileIva + imponibileNoIva + iva;
 
-    // generazione PDF
     const handleDownloadPdf = async () => {
-        if (!previewRef.current) return;
+        if (!previewRef.current || !footerRef.current || !footerSpacerRef.current) return;
 
         const node = previewRef.current;
+        const footer = footerRef.current;
+        const spacer = footerSpacerRef.current;
+
+        // reset spacer
+        spacer.style.height = '0px';
+
+        // ✅ Calcolo altezza pagina "virtuale" in px (rapporto A4)
+        const pageHeightPx = node.clientWidth * (297 / 210);
+
+        const footerTopPx = footer.offsetTop;
+        const footerHeightPx = footer.offsetHeight;
+
+        const usedInPage = footerTopPx % pageHeightPx;
+        const remainingPx = pageHeightPx - usedInPage;
+
+        const SAFETY_PX = 70;
+
+        // Se il footer rischia di essere spezzato -> spingilo alla pagina successiva
+        if (remainingPx < footerHeightPx + SAFETY_PX) {
+            spacer.style.height = `${remainingPx + SAFETY_PX}px`;
+        }
 
         // 🔥 forza stile PDF
         node.classList.add('pdf-export');
 
-        const dataUrl = await toPng(node, {
-            cacheBust: true,
-            pixelRatio: 2.5, // importantissimo
-            backgroundColor: '#ffffff'
-        });
+        try {
+            const dataUrl = await toPng(node, {
+                cacheBust: true,
+                pixelRatio: 2.5,
+                backgroundColor: '#ffffff',
+            });
 
-        node.classList.remove('pdf-export');
+            const pdf = new jsPDF('p', 'mm', 'a4');
+            const pageWidth = pdf.internal.pageSize.getWidth();
+            const pageHeight = pdf.internal.pageSize.getHeight();
 
-        const pdf = new jsPDF('p', 'mm', 'a4');
-        const pageWidth = pdf.internal.pageSize.getWidth();
-        const pageHeight = pdf.internal.pageSize.getHeight();
+            const img = new Image();
+            img.src = dataUrl;
+            await new Promise((res, rej) => {
+                img.onload = () => res(true);
+                img.onerror = rej;
+            });
 
-        const img = new Image();
-        img.src = dataUrl;
-        await new Promise((res) => (img.onload = res));
+            const imgWidth = pageWidth;
+            const imgHeight = (img.height * imgWidth) / img.width;
 
-        const imgWidth = pageWidth;
-        const imgHeight = (img.height * imgWidth) / img.width;
+            let heightLeft = imgHeight;
+            let position = 0;
 
-        let heightLeft = imgHeight;
-        let position = 0;
-
-        pdf.addImage(dataUrl, 'PNG', 0, position, imgWidth, imgHeight);
-        heightLeft -= pageHeight;
-
-        while (heightLeft > 0) {
-            pdf.addPage();
-            position = heightLeft - imgHeight;
             pdf.addImage(dataUrl, 'PNG', 0, position, imgWidth, imgHeight);
             heightLeft -= pageHeight;
+
+            while (heightLeft > 0) {
+                pdf.addPage();
+                position = heightLeft - imgHeight;
+                pdf.addImage(dataUrl, 'PNG', 0, position, imgWidth, imgHeight);
+                heightLeft -= pageHeight;
+            }
+
+            pdf.save('Preventivo.pdf');
+        } finally {
+            node.classList.remove('pdf-export');
+            spacer.style.height = '0px';
         }
-
-        pdf.save('Preventivo.pdf');
     };
-
 
     return (
         <div className="min-h-screen bg-gray-100">
             {/* Toolbar */}
             <div className="bg-white shadow-md p-4 print:hidden sticky top-0 z-10">
                 <div className="max-w-4xl mx-auto flex justify-between items-center">
-                    {/* sezione modifica preventivo */}
                     <button
                         onClick={onBack}
                         className="flex items-center gap-2 px-4 py-2 bg-gray-200 hover:bg-gray-300 rounded-lg transition-colors"
@@ -113,29 +145,21 @@ export function QuotePreview({ data, onBack }: QuotePreviewProps) {
                         Modifica Preventivo
                     </button>
 
-                    <div className="flex gap-3">
-
-                        {/* Scarico PDF */}
-                        <button
-                            onClick={handleDownloadPdf}
-                            className="flex items-center gap-2 px-4 py-2 bg-green-600 text-white hover:bg-green-700 rounded-lg transition-colors"
-                        >
-                            <Download className="w-5 h-5" />
-                            Scarica PDF
-                        </button>
-                    </div>
+                    <button
+                        onClick={handleDownloadPdf}
+                        className="flex items-center gap-2 px-4 py-2 bg-green-600 text-white hover:bg-green-700 rounded-lg transition-colors"
+                    >
+                        <Download className="w-5 h-5" />
+                        Scarica PDF
+                    </button>
                 </div>
             </div>
 
             {/* Preview */}
             <div className="max-w-4xl mx-auto p-6">
-                <div
-                    ref={previewRef}
-                    className="bg-white shadow-lg p-10"
-                >
-                    {/*  Generazione preventivo */}
-
-                    <div className="flex justify-between items-start gap-6 mb-10  ">
+                <div ref={previewRef} className="bg-white shadow-lg p-10">
+                    {/* Header */}
+                    <div className="flex justify-between items-start gap-6 mb-10">
                         <img src={logo} alt="Logo azienda" className="w-56 max-h-24 object-contain" />
 
                         <div className="text-right space-y-1 text-[15px] leading-relaxed">
@@ -161,15 +185,14 @@ export function QuotePreview({ data, onBack }: QuotePreviewProps) {
                         <p className="whitespace-pre-line">{data.serviceDescription}</p>
                     </div>
 
+                    {/* Tabella servizi robusta per PDF */}
                     {data.services?.length > 0 && (
                         <div className="my-8">
-                            {/* header tabella */}
                             <div className="flex justify-between text-sm font-medium text-black border-b-2 border-black pb-2">
                                 <p>Servizio</p>
                                 <p className="w-40 text-right">Costo</p>
                             </div>
 
-                            {/* righe */}
                             <div className="border-b border-black">
                                 {data.services.map((service, index) => (
                                     <div
@@ -192,7 +215,7 @@ export function QuotePreview({ data, onBack }: QuotePreviewProps) {
                         </div>
                     )}
 
-
+                    {/* Totali */}
                     <div className="mt-10 flex justify-end">
                         <div className="rounded-lg border border-gray-300 px-5 py-4 min-w-[360px]">
                             <div className="flex justify-between text-sm">
@@ -219,7 +242,11 @@ export function QuotePreview({ data, onBack }: QuotePreviewProps) {
                         </div>
                     </div>
 
-                    <div className="mt-16 flex justify-between items-end">
+                    {/* ✅ spacer anti-taglio footer */}
+                    <div ref={footerSpacerRef} />
+
+                    {/* Footer */}
+                    <div ref={footerRef} className="mt-16 flex justify-between items-end">
                         <div className="text-xl leading-relaxed">
                             <p className="font-medium">{data.location}</p>
                             <p className="text-sm">{formatDate(data.date)}</p>
