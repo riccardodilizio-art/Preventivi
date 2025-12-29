@@ -19,6 +19,22 @@
     }
 }
 
+.pdf-export * {
+    color: #000 !important;
+    opacity: 1 !important;
+}
+
+.pdf-export p,
+.pdf-export span,
+.pdf-export div {
+    font-weight: 500;
+}
+
+.pdf-export .font-bold {
+    font-weight: 700 !important;
+}
+
+
 /* ✅ Le tue variabili UI (shadcn-style) — NON rimuoverle */
 :root {
     --font-size: 16px;

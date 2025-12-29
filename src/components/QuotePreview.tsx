@@ -60,19 +60,21 @@ export function QuotePreview({ data, onBack }: QuotePreviewProps) {
 
         const node = previewRef.current;
 
-        // PNG ad alta qualità
+        // 🔥 forza stile PDF
+        node.classList.add('pdf-export');
+
         const dataUrl = await toPng(node, {
             cacheBust: true,
-            pixelRatio: 2,
+            pixelRatio: 2.5, // importantissimo
             backgroundColor: '#ffffff'
         });
+
+        node.classList.remove('pdf-export');
 
         const pdf = new jsPDF('p', 'mm', 'a4');
         const pageWidth = pdf.internal.pageSize.getWidth();
         const pageHeight = pdf.internal.pageSize.getHeight();
 
-        // Convertiamo le dimensioni immagine in mm mantenendo ratio
-        // Per farlo bene senza conoscere le dimensioni reali, usiamo un Image() in JS:
         const img = new Image();
         img.src = dataUrl;
         await new Promise((res) => (img.onload = res));
@@ -93,9 +95,9 @@ export function QuotePreview({ data, onBack }: QuotePreviewProps) {
             heightLeft -= pageHeight;
         }
 
-        const safeName = (data.companyName || 'preventivo').replace(/[^\w\s-]/g, '').trim();
-        pdf.save(`Preventivo_${safeName}.pdf`);
+        pdf.save('Preventivo.pdf');
     };
+
 
 
     return (
