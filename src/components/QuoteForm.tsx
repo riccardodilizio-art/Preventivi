@@ -22,7 +22,7 @@ export function QuoteForm({ onSubmit, initialData }: QuoteFormProps) {
             vatNumber: '',
             subject: '',
             serviceDescription: '',
-            services: [{ description: '', cost: '' }],
+            services: [{ description: '', cost: '', vat: true }], // ✅ VAT default ON
             totalCost: '',
             location: '',
             date: new Date().toISOString().split('T')[0],
@@ -38,7 +38,7 @@ export function QuoteForm({ onSubmit, initialData }: QuoteFormProps) {
     const onFormSubmit = (data: QuoteData) => {
         const filteredData = {
             ...data,
-            services: data.services.filter((service) => service.description.trim() !== '')
+            services: (data.services || []).filter((service) => service.description.trim() !== '')
         };
         onSubmit(filteredData);
     };
@@ -99,9 +99,7 @@ export function QuoteForm({ onSubmit, initialData }: QuoteFormProps) {
                                     className="w-full px-4 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-transparent"
                                     placeholder="es. DLZRCR04P18C632D"
                                 />
-                                {errors.taxCode && (
-                                    <p className="text-red-500 mt-1">{errors.taxCode.message}</p>
-                                )}
+                                {errors.taxCode && <p className="text-red-500 mt-1">{errors.taxCode.message}</p>}
                             </div>
 
                             <div>
@@ -111,9 +109,7 @@ export function QuoteForm({ onSubmit, initialData }: QuoteFormProps) {
                                     className="w-full px-4 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-transparent"
                                     placeholder="es. 02798780694"
                                 />
-                                {errors.vatNumber && (
-                                    <p className="text-red-500 mt-1">{errors.vatNumber.message}</p>
-                                )}
+                                {errors.vatNumber && <p className="text-red-500 mt-1">{errors.vatNumber.message}</p>}
                             </div>
                         </div>
                     </section>
@@ -126,11 +122,9 @@ export function QuoteForm({ onSubmit, initialData }: QuoteFormProps) {
                             <input
                                 {...register('subject', { required: 'Campo obbligatorio' })}
                                 className="w-full px-4 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-transparent"
-                                placeholder="es. Proposta preventivo Cronometraggio per rilevazione tempi per Prova selettiva Polizia Locale"
+                                placeholder="es. Proposta preventivo Cronometraggio per rilevazione tempi..."
                             />
-                            {errors.subject && (
-                                <p className="text-red-500 mt-1">{errors.subject.message}</p>
-                            )}
+                            {errors.subject && <p className="text-red-500 mt-1">{errors.subject.message}</p>}
                         </div>
                     </section>
 
@@ -164,22 +158,35 @@ export function QuoteForm({ onSubmit, initialData }: QuoteFormProps) {
                                         placeholder={`Descrizione servizio ${index + 1}`}
                                     />
 
-                                    {/* Costo con € fisso */}
-                                    <div className="relative w-40">
-                                        <input
-                                            {...register(`services.${index}.cost` as const, {
-                                                setValueAs: (v) => String(v ?? '').replace(/[^\d.,]/g, ''),
-                                                pattern: {
-                                                    value: /^[0-9.,]*$/,
-                                                    message: 'Inserisci solo numeri'
-                                                }
-                                            })}
-                                            inputMode="decimal"
-                                            className="w-40 px-4 py-2 text-right border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-transparent"
-                                            placeholder="0,00  "/>
-                                        <span className="absolute right-3 top-1/2 -translate-y-1/2 text-gray-500 select-none">
-                                            €
-                                        </span>
+                                    {/* Costo + Checkbox IVA */}
+                                    <div className="w-40">
+                                        <div className="relative">
+                                            <input
+                                                {...register(`services.${index}.cost` as const, {
+                                                    setValueAs: (v) => String(v ?? '').replace(/[^\d.,]/g, ''),
+                                                    pattern: {
+                                                        value: /^[0-9.,]*$/,
+                                                        message: 'Inserisci solo numeri'
+                                                    }
+                                                })}
+                                                inputMode="decimal"
+                                                className="w-40 px-4 py-2 text-right border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-transparent"
+                                                placeholder="0,00"
+                                            />
+                                            <span className="absolute right-3 top-1/2 -translate-y-1/2 text-gray-500 select-none">
+                        €
+                      </span>
+                                        </div>
+
+                                        <label className="flex items-center gap-2 mt-2 select-none">
+                                            <input
+                                                type="checkbox"
+                                                {...register(`services.${index}.vat` as const)}
+                                                className="h-4 w-4"
+                                                defaultChecked
+                                            />
+                                            <span className="text-sm text-gray-600">Applica IVA</span>
+                                        </label>
                                     </div>
 
                                     {fields.length > 1 && (
@@ -197,7 +204,7 @@ export function QuoteForm({ onSubmit, initialData }: QuoteFormProps) {
 
                             <button
                                 type="button"
-                                onClick={() => append({ description: '', cost: '' })}
+                                onClick={() => append({ description: '', cost: '', vat: true })} // ✅ VAT default ON
                                 className="flex items-center gap-2 px-4 py-2 bg-blue-500 text-white rounded-lg hover:bg-blue-600 transition-colors"
                             >
                                 <Plus className="w-5 h-5" />
@@ -205,7 +212,6 @@ export function QuoteForm({ onSubmit, initialData }: QuoteFormProps) {
                             </button>
                         </div>
                     </section>
-
 
                     {/* Footer */}
                     <section>
@@ -218,9 +224,7 @@ export function QuoteForm({ onSubmit, initialData }: QuoteFormProps) {
                                     className="w-full px-4 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-transparent"
                                     placeholder="es. Ripa Teatina"
                                 />
-                                {errors.location && (
-                                    <p className="text-red-500 mt-1">{errors.location.message}</p>
-                                )}
+                                {errors.location && <p className="text-red-500 mt-1">{errors.location.message}</p>}
                             </div>
 
                             <div>
@@ -230,9 +234,7 @@ export function QuoteForm({ onSubmit, initialData }: QuoteFormProps) {
                                     {...register('date', { required: 'Campo obbligatorio' })}
                                     className="w-full px-4 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-transparent"
                                 />
-                                {errors.date && (
-                                    <p className="text-red-500 mt-1">{errors.date.message}</p>
-                                )}
+                                {errors.date && <p className="text-red-500 mt-1">{errors.date.message}</p>}
                             </div>
 
                             <div>
