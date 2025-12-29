@@ -206,7 +206,7 @@ export function QuotePreview({ data, onBack }: QuotePreviewProps) {
                                                 {service.cost?.trim() ? formatEuro(service.cost) : ''}
                                             </p>
                                             <p className="text-xs text-black">
-                                                {service.vat ? 'Soggetto IVA' : 'Non soggetto IVA'}
+                                                {service.vat ? 'Soggetto a Tasse' : 'Non soggetto a Tasse'}
                                             </p>
                                         </div>
                                     </div>
