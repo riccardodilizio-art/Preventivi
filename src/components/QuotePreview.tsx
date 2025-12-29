@@ -187,17 +187,17 @@ export function QuotePreview({ data, onBack }: QuotePreviewProps) {
                     <div className="mt-10 flex justify-end">
                         <div className="rounded-lg border border-gray-300 px-5 py-4 min-w-[360px]">
                             <div className="flex justify-between text-sm">
-                                <span className="text-gray-600">Imponibile (soggetto IVA)</span>
+                                <span className="text-gray-600">Imponibile (Tasse)</span>
                                 <span className="font-medium">{formatEuroFromNumber(imponibileIva)}</span>
                             </div>
 
                             <div className="flex justify-between text-sm mt-2">
-                                <span className="text-gray-600">Imponibile (non soggetto IVA)</span>
+                                <span className="text-gray-600">Imponibile (non soggetto a Tasse)</span>
                                 <span className="font-medium">{formatEuroFromNumber(imponibileNoIva)}</span>
                             </div>
 
                             <div className="flex justify-between text-sm mt-2">
-                                <span className="text-gray-600">IVA (20%)</span>
+                                <span className="text-gray-600">Tasse (20%)</span>
                                 <span className="font-medium">{formatEuroFromNumber(iva)}</span>
                             </div>
 

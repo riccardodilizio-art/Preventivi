@@ -186,7 +186,7 @@ export function QuoteForm({ onSubmit, initialData }: QuoteFormProps) {
                                             className="h-4 w-4"
                                             defaultChecked
                                         />
-                                        <span className="text-sm text-gray-700">IVA</span>
+                                        <span className="text-sm text-gray-700">Tasse</span>
                                     </label>
 
                                     {/* Rimuovi */}
