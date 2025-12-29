@@ -24,6 +24,17 @@
     opacity: 1 !important;
 }
 
+/* forza tutti i bordi a essere visibili */
+.pdf-export .border,
+.pdf-export .border-t,
+.pdf-export .border-b,
+.pdf-export .border-l,
+.pdf-export .border-r {
+    border-color: #000 !important;
+    border-style: solid !important;
+}
+
+
 .pdf-export p,
 .pdf-export span,
 .pdf-export div {
@@ -104,12 +115,13 @@
     }
 }
 
-/* ✅ (opzionale) rendi il bold super visibile in stampa se vuoi */
 @media print {
-    .force-bold, .force-bold * {
-        font-weight: var(--font-weight-bold) !important;
+    * {
+        -webkit-print-color-adjust: exact;
+        print-color-adjust: exact;
     }
 }
+
 @layer theme {
     :root {
         --font-weight-semibold: 600;

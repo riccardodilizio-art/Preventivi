@@ -99,7 +99,6 @@ export function QuotePreview({ data, onBack }: QuotePreviewProps) {
     };
 
 
-
     return (
         <div className="min-h-screen bg-gray-100">
             {/* Toolbar */}
@@ -136,7 +135,7 @@ export function QuotePreview({ data, onBack }: QuotePreviewProps) {
                 >
                     {/*  Generazione preventivo */}
 
-                    <div className="flex justify-between items-start gap-6 mb-10">
+                    <div className="flex justify-between items-start gap-6 mb-10  ">
                         <img src={logo} alt="Logo azienda" className="w-56 max-h-24 object-contain" />
 
                         <div className="text-right space-y-1 text-[15px] leading-relaxed">
@@ -164,20 +163,27 @@ export function QuotePreview({ data, onBack }: QuotePreviewProps) {
 
                     {data.services?.length > 0 && (
                         <div className="my-8">
-                            <div className="flex justify-between text-sm font-medium text-gray-600 border-b border-gray-300 pb-2">
+                            {/* header tabella */}
+                            <div className="flex justify-between text-sm font-medium text-black border-b-2 border-black pb-2">
                                 <p>Servizio</p>
                                 <p className="w-40 text-right">Costo</p>
                             </div>
 
-                            <div className="divide-y divide-gray-200">
+                            {/* righe */}
+                            <div className="border-b border-black">
                                 {data.services.map((service, index) => (
-                                    <div key={index} className="flex justify-between items-start gap-6 py-3">
-                                        <p className="font-bold flex-1">{service.description}</p>
+                                    <div
+                                        key={index}
+                                        className="flex justify-between items-start gap-6 py-3 border-t border-black"
+                                    >
+                                        <p className="font-bold flex-1 text-black">{service.description}</p>
 
                                         <div className="w-40 text-right whitespace-nowrap">
-                                            <p className="font-bold">{service.cost?.trim() ? formatEuro(service.cost) : ''}</p>
-                                            <p className="text-xs text-gray-500">
-                                                {service.vat ? 'Soggetto a Tasse' : 'Non soggetto a Tasse'}
+                                            <p className="font-bold text-black">
+                                                {service.cost?.trim() ? formatEuro(service.cost) : ''}
+                                            </p>
+                                            <p className="text-xs text-black">
+                                                {service.vat ? 'Soggetto IVA' : 'Non soggetto IVA'}
                                             </p>
                                         </div>
                                     </div>
@@ -185,6 +191,7 @@ export function QuotePreview({ data, onBack }: QuotePreviewProps) {
                             </div>
                         </div>
                     )}
+
 
                     <div className="mt-10 flex justify-end">
                         <div className="rounded-lg border border-gray-300 px-5 py-4 min-w-[360px]">
