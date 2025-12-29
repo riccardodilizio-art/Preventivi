@@ -19,32 +19,81 @@
     }
 }
 
-.pdf-export * {
-    color: #000 !important;
-    opacity: 1 !important;
+/* =========================
+   PDF EXPORT (SAFE)
+   ========================= */
+
+.pdf-export {
+    background: #fff !important;
 }
 
-/* forza tutti i bordi a essere visibili */
+/* ✅ testo leggibile (NON forziamo tutto) */
+.pdf-export p,
+.pdf-export span,
+.pdf-export li,
+.pdf-export td,
+.pdf-export th,
+.pdf-export label,
+.pdf-export h1,
+.pdf-export h2,
+.pdf-export h3,
+.pdf-export h4,
+.pdf-export h5,
+.pdf-export h6 {
+    color: #000 !important;
+    opacity: 1 !important;
+    text-shadow: none !important;
+    filter: none !important;
+}
+
+/* ✅ weights coerenti */
+.pdf-export p,
+.pdf-export span,
+.pdf-export div {
+    font-weight: 500 !important;
+}
+
+.pdf-export .font-medium { font-weight: 600 !important; }
+.pdf-export .font-semibold { font-weight: 700 !important; }
+.pdf-export .font-bold,
+.pdf-export strong,
+.pdf-export b { font-weight: 800 !important; }
+
+/* ✅ NON uccidiamo gli sfondi: lasciamo i bg-gray-* (opzionale)
+   Se vuoi proprio bianco, commenta queste 3 regole. */
+.pdf-export .bg-gray-50 { background-color: #f9fafb !important; }
+.pdf-export .bg-gray-100 { background-color: #f3f4f6 !important; }
+.pdf-export .bg-gray-200 { background-color: #e5e7eb !important; }
+
+/* ✅ bordi e linee sempre visibili */
 .pdf-export .border,
 .pdf-export .border-t,
 .pdf-export .border-b,
 .pdf-export .border-l,
-.pdf-export .border-r {
+.pdf-export .border-r,
+.pdf-export [class*="border-"] {
     border-color: #000 !important;
     border-style: solid !important;
 }
 
-
-.pdf-export p,
-.pdf-export span,
-.pdf-export div {
-    font-weight: 500;
+/* ✅ divide-y e divide-x */
+.pdf-export .divide-y > :not([hidden]) ~ :not([hidden]) {
+    border-top-width: 1px !important;
+    border-top-style: solid !important;
+    border-top-color: #000 !important;
+}
+.pdf-export .divide-x > :not([hidden]) ~ :not([hidden]) {
+    border-left-width: 1px !important;
+    border-left-style: solid !important;
+    border-left-color: #000 !important;
 }
 
-.pdf-export .font-bold {
-    font-weight: 700 !important;
+/* ✅ evita spezzature brutte */
+.pdf-export .no-break,
+.pdf-export [data-no-break="true"] {
+    break-inside: avoid !important;
+    page-break-inside: avoid !important;
 }
-
 
 /* ✅ Le tue variabili UI (shadcn-style) — NON rimuoverle */
 :root {
