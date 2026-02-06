@@ -17,26 +17,22 @@ interface GeneratePdfParams {
   footerElement: HTMLElement;
 }
 
-interface BlockImage {
-  dataUrl: string;
-  widthMm: number;
-  heightMm: number;
-}
-
 export async function generateQuotePdf({
   subject,
   headerElement,
   contentElement,
   footerElement,
 }: GeneratePdfParams): Promise<void> {
-  // 1) Cattura header e footer
-  const [headerDataUrl, footerDataUrl] = await Promise.all([
+  // 1) Cattura header, contenuto intero e footer come immagini
+  const [headerDataUrl, contentDataUrl, footerDataUrl] = await Promise.all([
     captureElement(headerElement),
+    captureElement(contentElement),
     captureElement(footerElement),
   ]);
 
-  const [headerImg, footerImg] = await Promise.all([
+  const [headerImg, contentImg, footerImg] = await Promise.all([
     loadImage(headerDataUrl),
+    loadImage(contentDataUrl),
     loadImage(footerDataUrl),
   ]);
 
@@ -51,88 +47,106 @@ export async function generateQuotePdf({
   const contentBottomY = pageHeight - footerHeightMm;
   const availableHeightMm = contentBottomY - contentTopY;
 
+  const contentWidthMm = pageWidth;
+  const contentHeightMm = (contentImg.height * pageWidth) / contentImg.width;
+
   const addHeaderFooter = () => {
     pdf.addImage(headerDataUrl, 'PNG', 0, 0, pageWidth, headerHeightMm);
     pdf.addImage(footerDataUrl, 'PNG', 0, pageHeight - footerHeightMm, pageWidth, footerHeightMm);
   };
 
-  // 2) Trova tutti i blocchi logici [data-pdf-block] nel contenuto
-  const blockElements = contentElement.querySelectorAll<HTMLElement>('[data-pdf-block]');
-
-  // 3) Cattura ogni blocco come immagine separata
-  const blockImages: BlockImage[] = [];
-  for (const el of blockElements) {
-    const dataUrl = await captureElement(el);
-    const img = await loadImage(dataUrl);
-    blockImages.push({
-      dataUrl,
-      widthMm: pageWidth,
-      heightMm: (img.height * pageWidth) / img.width,
-    });
+  // 2) Se il contenuto sta in una pagina, semplice
+  if (contentHeightMm <= availableHeightMm) {
+    addHeaderFooter();
+    pdf.addImage(contentDataUrl, 'PNG', 0, contentTopY, contentWidthMm, contentHeightMm);
+    const filename = `Preventivo_${subject?.replace(/\s+/g, '_') || 'Documento'}.pdf`;
+    pdf.save(filename);
+    return;
   }
 
-  // 4) Posiziona i blocchi nel PDF, con page break intelligenti
-  addHeaderFooter();
-  let currentY = contentTopY;
+  // 3) Calcola punti di taglio sicuri dalle posizioni Y dei blocchi [data-pdf-block]
+  //    I tagli avvengono al BORDO INFERIORE di ogni blocco (fine del blocco)
+  const contentRect = contentElement.getBoundingClientRect();
+  const blockElements = contentElement.querySelectorAll<HTMLElement>('[data-pdf-block]');
+  const pxPerMm = contentImg.width / contentWidthMm;
+  const pixelRatio = contentImg.width / contentRect.width;
 
-  for (const block of blockImages) {
-    // Se il blocco non entra nella pagina corrente, nuova pagina
-    if (currentY + block.heightMm > contentBottomY && currentY > contentTopY) {
+  // Calcola le posizioni Y di fine blocco in pixel dell'immagine
+  const safeBreakPointsPx: number[] = [];
+  for (const el of blockElements) {
+    const elRect = el.getBoundingClientRect();
+    const bottomRelative = elRect.bottom - contentRect.top;
+    const bottomPx = bottomRelative * pixelRatio;
+    safeBreakPointsPx.push(bottomPx);
+  }
+
+  // 4) Taglia l'immagine ai punti sicuri, rispettando lo spazio disponibile
+  const canvas = document.createElement('canvas');
+  canvas.width = contentImg.width;
+  canvas.height = contentImg.height;
+  const ctx = canvas.getContext('2d');
+  if (!ctx) throw new Error('Impossibile creare canvas context');
+  ctx.drawImage(contentImg, 0, 0);
+
+  const availableHeightPx = availableHeightMm * pxPerMm;
+  let srcY = 0;
+  let isFirstPage = true;
+
+  while (srcY < contentImg.height) {
+    if (!isFirstPage) {
       pdf.addPage();
-      addHeaderFooter();
-      currentY = contentTopY;
     }
+    addHeaderFooter();
 
-    // Se un singolo blocco è più alto dello spazio disponibile,
-    // lo splitta su più pagine (caso raro: descrizione molto lunga)
-    if (block.heightMm > availableHeightMm) {
-      const blockImg = await loadImage(block.dataUrl);
-      const canvas = document.createElement('canvas');
-      canvas.width = blockImg.width;
-      canvas.height = blockImg.height;
-      const ctx = canvas.getContext('2d');
-      if (!ctx) continue;
-      ctx.drawImage(blockImg, 0, 0);
+    // Trova il punto di taglio sicuro migliore che sta dentro lo spazio disponibile
+    const maxEndPx = srcY + availableHeightPx;
+    let bestBreak = srcY + availableHeightPx; // fallback: taglia al limite
 
-      const pxPerMm = blockImg.width / pageWidth;
-      let srcY = 0;
-
-      while (srcY < blockImg.height) {
-        const sliceAvailMm = contentBottomY - currentY;
-        const sliceAvailPx = sliceAvailMm * pxPerMm;
-        const sliceHeightPx = Math.min(sliceAvailPx, blockImg.height - srcY);
-        const sliceHeightMm = sliceHeightPx / pxPerMm;
-
-        const sliceCanvas = document.createElement('canvas');
-        sliceCanvas.width = blockImg.width;
-        sliceCanvas.height = sliceHeightPx;
-        const sliceCtx = sliceCanvas.getContext('2d');
-        if (sliceCtx) {
-          sliceCtx.fillStyle = '#ffffff';
-          sliceCtx.fillRect(0, 0, sliceCanvas.width, sliceCanvas.height);
-          sliceCtx.drawImage(
-            canvas,
-            0, srcY, blockImg.width, sliceHeightPx,
-            0, 0, blockImg.width, sliceHeightPx,
-          );
-          const sliceUrl = sliceCanvas.toDataURL('image/png');
-          pdf.addImage(sliceUrl, 'PNG', 0, currentY, pageWidth, sliceHeightMm);
-        }
-
-        srcY += sliceHeightPx;
-        currentY += sliceHeightMm;
-
-        if (srcY < blockImg.height) {
-          pdf.addPage();
-          addHeaderFooter();
-          currentY = contentTopY;
-        }
+    // Cerca l'ultimo breakpoint che sta dentro lo spazio disponibile
+    let foundBreak = false;
+    for (let i = safeBreakPointsPx.length - 1; i >= 0; i--) {
+      const bp = safeBreakPointsPx[i]!;
+      if (bp > srcY && bp <= maxEndPx) {
+        bestBreak = bp;
+        foundBreak = true;
+        break;
       }
-    } else {
-      // Blocco normale: inserisci nella pagina corrente
-      pdf.addImage(block.dataUrl, 'PNG', 0, currentY, block.widthMm, block.heightMm);
-      currentY += block.heightMm;
     }
+
+    // Se non troviamo un breakpoint valido e il contenuto restante è poco,
+    // prendi tutto il contenuto restante
+    if (!foundBreak && contentImg.height - srcY <= availableHeightPx) {
+      bestBreak = contentImg.height;
+    }
+
+    // Se il primo breakpoint è già oltre lo spazio disponibile,
+    // dobbiamo forzare il taglio (blocco singolo troppo alto)
+    if (!foundBreak && bestBreak > contentImg.height) {
+      bestBreak = Math.min(srcY + availableHeightPx, contentImg.height);
+    }
+
+    const sliceHeightPx = bestBreak - srcY;
+    const sliceHeightMm = sliceHeightPx / pxPerMm;
+
+    // Ritaglia e inserisci la fetta
+    const sliceCanvas = document.createElement('canvas');
+    sliceCanvas.width = contentImg.width;
+    sliceCanvas.height = Math.max(1, Math.round(sliceHeightPx));
+    const sliceCtx = sliceCanvas.getContext('2d');
+    if (sliceCtx) {
+      sliceCtx.fillStyle = '#ffffff';
+      sliceCtx.fillRect(0, 0, sliceCanvas.width, sliceCanvas.height);
+      sliceCtx.drawImage(
+        canvas,
+        0, srcY, contentImg.width, sliceHeightPx,
+        0, 0, contentImg.width, sliceHeightPx,
+      );
+      const sliceUrl = sliceCanvas.toDataURL('image/png');
+      pdf.addImage(sliceUrl, 'PNG', 0, contentTopY, contentWidthMm, sliceHeightMm);
+    }
+
+    srcY = bestBreak;
+    isFirstPage = false;
   }
 
   const filename = `Preventivo_${subject?.replace(/\s+/g, '_') || 'Documento'}.pdf`;
