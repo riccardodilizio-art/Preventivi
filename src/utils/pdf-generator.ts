@@ -44,43 +44,49 @@ export async function generateQuotePdf({
   const footerHeightMm = (footerImg.height * pageWidth) / footerImg.width;
 
   const contentTopY = headerHeightMm;
-  const contentBottomY = pageHeight - footerHeightMm;
-  const availableHeightMm = contentBottomY - contentTopY;
+  // Spazio massimo per contenuto: tra header e footer
+  const maxContentHeightMm = pageHeight - headerHeightMm - footerHeightMm;
 
   const contentWidthMm = pageWidth;
   const contentHeightMm = (contentImg.height * pageWidth) / contentImg.width;
 
-  const addHeaderFooter = () => {
+  const addHeader = () => {
     pdf.addImage(headerDataUrl, 'PNG', 0, 0, pageWidth, headerHeightMm);
-    pdf.addImage(footerDataUrl, 'PNG', 0, pageHeight - footerHeightMm, pageWidth, footerHeightMm);
+  };
+
+  const addFooter = (afterContentY: number) => {
+    // Posiziona il footer subito dopo il contenuto, oppure in fondo alla pagina
+    // (quello che viene dopo, per evitare che il footer sovrasti il contenuto)
+    const footerAtBottom = pageHeight - footerHeightMm;
+    const footerAfterContent = afterContentY;
+    const footerY = Math.max(footerAfterContent, footerAtBottom);
+    // Se il footer dopo il contenuto sfora la pagina, mettilo in fondo
+    pdf.addImage(footerDataUrl, 'PNG', 0, Math.min(footerY, footerAtBottom), pageWidth, footerHeightMm);
   };
 
   // 2) Se il contenuto sta in una pagina, semplice
-  if (contentHeightMm <= availableHeightMm) {
-    addHeaderFooter();
+  if (contentHeightMm <= maxContentHeightMm) {
+    addHeader();
     pdf.addImage(contentDataUrl, 'PNG', 0, contentTopY, contentWidthMm, contentHeightMm);
-    const filename = `Preventivo_${subject?.replace(/\s+/g, '_') || 'Documento'}.pdf`;
-    pdf.save(filename);
+    addFooter(contentTopY + contentHeightMm);
+    pdf.save(`Preventivo_${subject?.replace(/\s+/g, '_') || 'Documento'}.pdf`);
     return;
   }
 
-  // 3) Calcola punti di taglio sicuri dalle posizioni Y dei blocchi [data-pdf-block]
-  //    I tagli avvengono al BORDO INFERIORE di ogni blocco (fine del blocco)
+  // 3) Calcola punti di taglio sicuri dai blocchi [data-pdf-block]
   const contentRect = contentElement.getBoundingClientRect();
   const blockElements = contentElement.querySelectorAll<HTMLElement>('[data-pdf-block]');
   const pxPerMm = contentImg.width / contentWidthMm;
   const pixelRatio = contentImg.width / contentRect.width;
 
-  // Calcola le posizioni Y di fine blocco in pixel dell'immagine
   const safeBreakPointsPx: number[] = [];
   for (const el of blockElements) {
     const elRect = el.getBoundingClientRect();
-    const bottomRelative = elRect.bottom - contentRect.top;
-    const bottomPx = bottomRelative * pixelRatio;
+    const bottomPx = (elRect.bottom - contentRect.top) * pixelRatio;
     safeBreakPointsPx.push(bottomPx);
   }
 
-  // 4) Taglia l'immagine ai punti sicuri, rispettando lo spazio disponibile
+  // 4) Prepara il canvas sorgente
   const canvas = document.createElement('canvas');
   canvas.width = contentImg.width;
   canvas.height = contentImg.height;
@@ -88,67 +94,81 @@ export async function generateQuotePdf({
   if (!ctx) throw new Error('Impossibile creare canvas context');
   ctx.drawImage(contentImg, 0, 0);
 
-  const availableHeightPx = availableHeightMm * pxPerMm;
+  const maxContentHeightPx = maxContentHeightMm * pxPerMm;
+
+  // 5) Calcola tutte le fette PRIMA di creare le pagine
+  const slices: { srcY: number; height: number }[] = [];
   let srcY = 0;
-  let isFirstPage = true;
 
   while (srcY < contentImg.height) {
-    if (!isFirstPage) {
-      pdf.addPage();
+    const remaining = contentImg.height - srcY;
+
+    // Se il contenuto restante sta nello spazio disponibile, prendilo tutto
+    if (remaining <= maxContentHeightPx) {
+      slices.push({ srcY, height: remaining });
+      break;
     }
-    addHeaderFooter();
 
-    // Trova il punto di taglio sicuro migliore che sta dentro lo spazio disponibile
-    const maxEndPx = srcY + availableHeightPx;
-    let bestBreak = srcY + availableHeightPx; // fallback: taglia al limite
+    // Trova l'ultimo breakpoint che sta nello spazio disponibile
+    const maxEndPx = srcY + maxContentHeightPx;
+    let bestBreak = -1;
 
-    // Cerca l'ultimo breakpoint che sta dentro lo spazio disponibile
-    let foundBreak = false;
     for (let i = safeBreakPointsPx.length - 1; i >= 0; i--) {
       const bp = safeBreakPointsPx[i]!;
       if (bp > srcY && bp <= maxEndPx) {
         bestBreak = bp;
-        foundBreak = true;
         break;
       }
     }
 
-    // Se non troviamo un breakpoint valido e il contenuto restante è poco,
-    // prendi tutto il contenuto restante
-    if (!foundBreak && contentImg.height - srcY <= availableHeightPx) {
-      bestBreak = contentImg.height;
+    // Se nessun breakpoint trovato, forza il taglio al limite
+    if (bestBreak <= srcY) {
+      bestBreak = Math.min(srcY + maxContentHeightPx, contentImg.height);
     }
 
-    // Se il primo breakpoint è già oltre lo spazio disponibile,
-    // dobbiamo forzare il taglio (blocco singolo troppo alto)
-    if (!foundBreak && bestBreak > contentImg.height) {
-      bestBreak = Math.min(srcY + availableHeightPx, contentImg.height);
+    slices.push({ srcY, height: bestBreak - srcY });
+    srcY = bestBreak;
+  }
+
+  // 6) Crea le pagine
+  for (let pageIdx = 0; pageIdx < slices.length; pageIdx++) {
+    if (pageIdx > 0) {
+      pdf.addPage();
     }
 
-    const sliceHeightPx = bestBreak - srcY;
-    const sliceHeightMm = sliceHeightPx / pxPerMm;
+    const slice = slices[pageIdx]!;
+    const sliceHeightMm = slice.height / pxPerMm;
+    const isLastPage = pageIdx === slices.length - 1;
 
-    // Ritaglia e inserisci la fetta
+    // Header su ogni pagina
+    addHeader();
+
+    // Ritaglia e inserisci la fetta di contenuto
     const sliceCanvas = document.createElement('canvas');
     sliceCanvas.width = contentImg.width;
-    sliceCanvas.height = Math.max(1, Math.round(sliceHeightPx));
+    sliceCanvas.height = Math.max(1, Math.round(slice.height));
     const sliceCtx = sliceCanvas.getContext('2d');
     if (sliceCtx) {
       sliceCtx.fillStyle = '#ffffff';
       sliceCtx.fillRect(0, 0, sliceCanvas.width, sliceCanvas.height);
       sliceCtx.drawImage(
         canvas,
-        0, srcY, contentImg.width, sliceHeightPx,
-        0, 0, contentImg.width, sliceHeightPx,
+        0, slice.srcY, contentImg.width, slice.height,
+        0, 0, contentImg.width, slice.height,
       );
       const sliceUrl = sliceCanvas.toDataURL('image/png');
       pdf.addImage(sliceUrl, 'PNG', 0, contentTopY, contentWidthMm, sliceHeightMm);
     }
 
-    srcY = bestBreak;
-    isFirstPage = false;
+    // Footer: sull'ultima pagina subito dopo il contenuto,
+    // sulle pagine intermedie in fondo alla pagina
+    if (isLastPage) {
+      const footerY = contentTopY + sliceHeightMm;
+      pdf.addImage(footerDataUrl, 'PNG', 0, footerY, pageWidth, footerHeightMm);
+    } else {
+      pdf.addImage(footerDataUrl, 'PNG', 0, pageHeight - footerHeightMm, pageWidth, footerHeightMm);
+    }
   }
 
-  const filename = `Preventivo_${subject?.replace(/\s+/g, '_') || 'Documento'}.pdf`;
-  pdf.save(filename);
+  pdf.save(`Preventivo_${subject?.replace(/\s+/g, '_') || 'Documento'}.pdf`);
 }
