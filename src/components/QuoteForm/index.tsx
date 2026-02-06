@@ -1,6 +1,7 @@
-import { useForm } from 'react-hook-form';
+import { useForm, Controller } from 'react-hook-form';
 import { FileText } from 'lucide-react';
 import type { QuoteData } from '@/types/quote';
+import { RichTextEditor } from '@/components/RichTextEditor';
 import { CompanySection } from './CompanySection';
 import { ServicesSection } from './ServicesSection';
 import { FooterSection } from './FooterSection';
@@ -81,13 +82,18 @@ export function QuoteForm({ onSubmit, initialData }: QuoteFormProps) {
           <section>
             <h2 className="mb-4 text-blue-600 border-b pb-2">Descrizione Servizio</h2>
             <div>
-              <label htmlFor="serviceDescription" className="block mb-2">Descrizione *</label>
-              <textarea
-                id="serviceDescription"
-                {...register('serviceDescription', { required: 'Campo obbligatorio' })}
-                rows={4}
-                className="w-full px-4 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-transparent"
-                placeholder="Descrivi il servizio offerto..."
+              <label className="block mb-2">Descrizione *</label>
+              <Controller
+                name="serviceDescription"
+                control={control}
+                rules={{ validate: (v) => (v && v.replace(/<[^>]*>/g, '').trim() !== '') || 'Campo obbligatorio' }}
+                render={({ field }) => (
+                  <RichTextEditor
+                    value={field.value}
+                    onChange={field.onChange}
+                    placeholder="Descrivi il servizio offerto..."
+                  />
+                )}
               />
               {errors.serviceDescription && (
                 <p className="text-red-500 mt-1">{errors.serviceDescription.message}</p>

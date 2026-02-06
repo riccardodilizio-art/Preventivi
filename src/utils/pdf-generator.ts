@@ -19,6 +19,7 @@ interface GeneratePdfParams {
   calculations: Calculations;
   headerElement: HTMLElement;
   footerElement: HTMLElement;
+  descriptionElement: HTMLElement | null;
 }
 
 export async function generateQuotePdf({
@@ -26,16 +27,24 @@ export async function generateQuotePdf({
   calculations,
   headerElement,
   footerElement,
+  descriptionElement,
 }: GeneratePdfParams): Promise<void> {
-  const [headerDataUrl, footerDataUrl] = await Promise.all([
+  const captures = [
     captureElement(headerElement),
     captureElement(footerElement),
-  ]);
+  ];
+  if (descriptionElement) {
+    captures.push(captureElement(descriptionElement));
+  }
+  const [headerDataUrl, footerDataUrl, descriptionDataUrl] = await Promise.all(captures);
 
-  const [headerImg, footerImg] = await Promise.all([
-    loadImage(headerDataUrl),
-    loadImage(footerDataUrl),
-  ]);
+  if (!headerDataUrl || !footerDataUrl) {
+    throw new Error('Impossibile catturare header o footer');
+  }
+
+  const headerImg = await loadImage(headerDataUrl);
+  const footerImg = await loadImage(footerDataUrl);
+  const descriptionImg = descriptionDataUrl ? await loadImage(descriptionDataUrl) : null;
 
   const pdf = new jsPDF('p', 'mm', 'a4');
   const pageWidth = pdf.internal.pageSize.getWidth();
@@ -65,17 +74,64 @@ export async function generateQuotePdf({
   addHeaderFooter();
   let currentY = topY;
 
-  // 1) Descrizione multi-pagina
-  if (data.serviceDescription?.trim()) {
+  // 1) Descrizione (catturata come immagine per preservare stili: colori, evidenziazioni, etc.)
+  if (descriptionDataUrl && descriptionImg) {
+    const contentWidth = pageWidth - paddingX * 2;
+    const descHeight = (descriptionImg.height * contentWidth) / descriptionImg.width;
+    const availableHeight = bottomY - currentY;
+
+    if (descHeight <= availableHeight) {
+      pdf.addImage(descriptionDataUrl, 'PNG', paddingX, currentY, contentWidth, descHeight);
+      currentY += descHeight + 6;
+    } else {
+      // Descrizione troppo alta: splitta su più pagine usando un canvas temporaneo
+      const canvas = document.createElement('canvas');
+      canvas.width = descriptionImg.width;
+      canvas.height = descriptionImg.height;
+      const ctx = canvas.getContext('2d');
+      if (ctx) {
+        ctx.drawImage(descriptionImg, 0, 0);
+        const pxPerMm = descriptionImg.width / contentWidth;
+        let srcY = 0;
+
+        while (srcY < descriptionImg.height) {
+          const sliceAvailMm = bottomY - currentY;
+          const sliceAvailPx = sliceAvailMm * pxPerMm;
+          const sliceHeightPx = Math.min(sliceAvailPx, descriptionImg.height - srcY);
+          const sliceHeightMm = sliceHeightPx / pxPerMm;
+
+          const sliceCanvas = document.createElement('canvas');
+          sliceCanvas.width = descriptionImg.width;
+          sliceCanvas.height = sliceHeightPx;
+          const sliceCtx = sliceCanvas.getContext('2d');
+          if (sliceCtx) {
+            sliceCtx.fillStyle = '#ffffff';
+            sliceCtx.fillRect(0, 0, sliceCanvas.width, sliceCanvas.height);
+            sliceCtx.drawImage(
+              canvas, 0, srcY, descriptionImg.width, sliceHeightPx,
+              0, 0, descriptionImg.width, sliceHeightPx,
+            );
+            const sliceUrl = sliceCanvas.toDataURL('image/png');
+            pdf.addImage(sliceUrl, 'PNG', paddingX, currentY, contentWidth, sliceHeightMm);
+          }
+
+          srcY += sliceHeightPx;
+          currentY += sliceHeightMm;
+
+          if (srcY < descriptionImg.height) {
+            currentY = newPage();
+          }
+        }
+      }
+      currentY += 6;
+    }
+  } else if (data.serviceDescription?.trim()) {
+    // Fallback: testo plain se la cattura immagine non è disponibile
+    const plainText = data.serviceDescription.replace(/<[^>]*>/g, '');
     pdf.setFontSize(10);
     pdf.setFont('helvetica', 'normal');
-
     const lineHeight = 5;
-    const lines: string[] = pdf.splitTextToSize(
-      data.serviceDescription,
-      pageWidth - paddingX * 2,
-    );
-
+    const lines: string[] = pdf.splitTextToSize(plainText, pageWidth - paddingX * 2);
     for (const line of lines) {
       if (currentY + lineHeight > bottomY) {
         currentY = newPage();
@@ -83,7 +139,6 @@ export async function generateQuotePdf({
       pdf.text(String(line), paddingX, currentY);
       currentY += lineHeight;
     }
-
     currentY += 6;
   }
 

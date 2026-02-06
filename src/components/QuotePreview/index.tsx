@@ -17,6 +17,7 @@ export function QuotePreview({ data, onBack }: QuotePreviewProps) {
   const [error, setError] = useState<string | null>(null);
   const headerRef = useRef<HTMLDivElement>(null);
   const footerRef = useRef<HTMLDivElement>(null);
+  const descriptionRef = useRef<HTMLDivElement>(null);
 
   const calculations = useQuoteCalculations(data.services);
 
@@ -35,6 +36,7 @@ export function QuotePreview({ data, onBack }: QuotePreviewProps) {
         calculations,
         headerElement: headerRef.current,
         footerElement: footerRef.current,
+        descriptionElement: descriptionRef.current,
       });
     } catch (err) {
       console.error('Errore generazione PDF:', err);
@@ -66,7 +68,7 @@ export function QuotePreview({ data, onBack }: QuotePreviewProps) {
             <QuoteHeader data={data} />
           </div>
 
-          <QuoteContent data={data} calculations={calculations} />
+          <QuoteContent ref={descriptionRef} data={data} calculations={calculations} />
 
           <div ref={footerRef}>
             <QuoteFooter data={data} />

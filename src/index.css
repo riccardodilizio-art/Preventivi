@@ -34,6 +34,25 @@
   }
 }
 
+/* Rich text content rendering */
+.rich-text-content ul,
+.rich-text-content ol {
+  padding-left: 1.5em;
+  margin: 0.5em 0;
+}
+
+.rich-text-content ul {
+  list-style-type: disc;
+}
+
+.rich-text-content ol {
+  list-style-type: decimal;
+}
+
+.rich-text-content li {
+  margin: 0.25em 0;
+}
+
 @media print {
   * {
     -webkit-print-color-adjust: exact;
