@@ -1,4 +1,4 @@
-import { useRef, useCallback } from 'react';
+import { useRef, useCallback, useEffect, useState } from 'react';
 import {
   Bold,
   Italic,
@@ -98,17 +98,37 @@ function ColorPicker({
 
 export function RichTextEditor({ value, onChange, placeholder }: RichTextEditorProps) {
   const editorRef = useRef<HTMLDivElement>(null);
+  const [isEmpty, setIsEmpty] = useState(true);
+
+  // Imposta il contenuto HTML solo al primo mount
+  useEffect(() => {
+    if (editorRef.current && value) {
+      editorRef.current.innerHTML = value;
+      updateIsEmpty();
+    }
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, []);
+
+  const updateIsEmpty = () => {
+    if (!editorRef.current) return;
+    const text = editorRef.current.textContent ?? '';
+    setIsEmpty(text.trim() === '');
+  };
 
   const execCommand = useCallback((command: string, arg?: CommandArg) => {
+    // Ripristina il focus sull'editor prima di eseguire il comando
+    editorRef.current?.focus();
     document.execCommand(command, false, arg);
     if (editorRef.current) {
       onChange(editorRef.current.innerHTML);
+      updateIsEmpty();
     }
   }, [onChange]);
 
   const handleInput = useCallback(() => {
     if (editorRef.current) {
       onChange(editorRef.current.innerHTML);
+      updateIsEmpty();
     }
   }, [onChange]);
 
@@ -119,10 +139,9 @@ export function RichTextEditor({ value, onChange, placeholder }: RichTextEditorP
     document.execCommand('insertHTML', false, html || text);
     if (editorRef.current) {
       onChange(editorRef.current.innerHTML);
+      updateIsEmpty();
     }
   }, [onChange]);
-
-  const isEmpty = !value || value === '<br>' || value === '<div><br></div>';
 
   return (
     <div className="border border-gray-300 rounded-lg overflow-hidden focus-within:ring-2 focus-within:ring-blue-500 focus-within:border-transparent">
@@ -199,7 +218,6 @@ export function RichTextEditor({ value, onChange, placeholder }: RichTextEditorP
           contentEditable
           onInput={handleInput}
           onPaste={handlePaste}
-          dangerouslySetInnerHTML={{ __html: value }}
           className="min-h-[120px] px-4 py-3 outline-none text-sm leading-relaxed"
         />
       </div>
