@@ -1,181 +1,42 @@
 @import "tailwindcss";
 
-/* ✅ Theme tokens (mantiene lo stile esistente + aggiunge i pesi mancanti) */
 @layer theme {
-    :root, :host {
-        --font-sans: ui-sans-serif, system-ui, sans-serif, "Apple Color Emoji", "Segoe UI Emoji", "Segoe UI Symbol", "Noto Color Emoji";
-        --font-mono: ui-monospace, SFMono-Regular, Menlo, Monaco, Consolas, "Liberation Mono", "Courier New", monospace;
+  :root, :host {
+    --font-sans: ui-sans-serif, system-ui, sans-serif, "Apple Color Emoji", "Segoe UI Emoji", "Segoe UI Symbol", "Noto Color Emoji";
+    --font-mono: ui-monospace, SFMono-Regular, Menlo, Monaco, Consolas, "Liberation Mono", "Courier New", monospace;
 
-        /* ✅ AGGIUNTA: pesi mancanti per far funzionare font-bold/font-semibold */
-        --font-weight-thin: 100;
-        --font-weight-extralight: 200;
-        --font-weight-light: 300;
-        --font-weight-normal: 400;
-        --font-weight-medium: 500;
-        --font-weight-semibold: 600;
-        --font-weight-bold: 700;
-        --font-weight-extrabold: 800;
-        --font-weight-black: 900;
-    }
+    --font-weight-thin: 100;
+    --font-weight-extralight: 200;
+    --font-weight-light: 300;
+    --font-weight-normal: 400;
+    --font-weight-medium: 500;
+    --font-weight-semibold: 600;
+    --font-weight-bold: 700;
+    --font-weight-extrabold: 800;
+    --font-weight-black: 900;
+  }
 }
 
-/* =========================
-   PDF EXPORT (SAFE)
-   ========================= */
-
-.pdf-export {
-    background: #fff !important;
-}
-
-/* ✅ testo leggibile (NON forziamo tutto) */
-.pdf-export p,
-.pdf-export span,
-.pdf-export li,
-.pdf-export td,
-.pdf-export th,
-.pdf-export label,
-.pdf-export h1,
-.pdf-export h2,
-.pdf-export h3,
-.pdf-export h4,
-.pdf-export h5,
-.pdf-export h6 {
-    color: #000 !important;
-    opacity: 1 !important;
-    text-shadow: none !important;
-    filter: none !important;
-}
-
-/* ✅ weights coerenti */
-.pdf-export p,
-.pdf-export span,
-.pdf-export div {
-    font-weight: 500 !important;
-}
-
-.pdf-export .font-medium { font-weight: 600 !important; }
-.pdf-export .font-semibold { font-weight: 700 !important; }
-.pdf-export .font-bold,
-.pdf-export strong,
-.pdf-export b { font-weight: 800 !important; }
-
-/* ✅ NON uccidiamo gli sfondi: lasciamo i bg-gray-* (opzionale)
-   Se vuoi proprio bianco, commenta queste 3 regole. */
-.pdf-export .bg-gray-50 { background-color: #f9fafb !important; }
-.pdf-export .bg-gray-100 { background-color: #f3f4f6 !important; }
-.pdf-export .bg-gray-200 { background-color: #e5e7eb !important; }
-
-/* ✅ bordi e linee sempre visibili */
-.pdf-export .border,
-.pdf-export .border-t,
-.pdf-export .border-b,
-.pdf-export .border-l,
-.pdf-export .border-r,
-.pdf-export [class*="border-"] {
-    border-color: #000 !important;
-    border-style: solid !important;
-}
-
-/* ✅ divide-y e divide-x */
-.pdf-export .divide-y > :not([hidden]) ~ :not([hidden]) {
-    border-top-width: 1px !important;
-    border-top-style: solid !important;
-    border-top-color: #000 !important;
-}
-.pdf-export .divide-x > :not([hidden]) ~ :not([hidden]) {
-    border-left-width: 1px !important;
-    border-left-style: solid !important;
-    border-left-color: #000 !important;
-}
-
-/* ✅ evita spezzature brutte */
-.pdf-export .no-break,
-.pdf-export [data-no-break="true"] {
-    break-inside: avoid !important;
-    page-break-inside: avoid !important;
-}
-
-/* ✅ Le tue variabili UI (shadcn-style) — NON rimuoverle */
-:root {
-    --font-size: 16px;
-    --background: #fff;
-    --foreground: oklch(.145 0 0);
-    --card: #fff;
-    --card-foreground: oklch(.145 0 0);
-    --popover: oklch(1 0 0);
-    --popover-foreground: oklch(.145 0 0);
-    --primary: #030213;
-    --primary-foreground: oklch(1 0 0);
-    --secondary: oklch(.95 .0058 264.53);
-    --secondary-foreground: #030213;
-    --muted: #ececf0;
-    --muted-foreground: #717182;
-    --accent: #e9ebef;
-    --accent-foreground: #030213;
-    --destructive: #d4183d;
-    --destructive-foreground: #fff;
-    --border: #0000001a;
-    --input: transparent;
-    --input-background: #f3f3f5;
-    --switch-background: #cbced4;
-    --ring: oklch(.708 0 0);
-    --radius: .625rem;
-}
-
-.dark {
-    --background: oklch(.145 0 0);
-    --foreground: oklch(.985 0 0);
-    --card: oklch(.145 0 0);
-    --card-foreground: oklch(.985 0 0);
-    --popover: oklch(.145 0 0);
-    --popover-foreground: oklch(.985 0 0);
-    --primary: oklch(.985 0 0);
-    --primary-foreground: oklch(.205 0 0);
-    --secondary: oklch(.269 0 0);
-    --secondary-foreground: oklch(.985 0 0);
-    --muted: oklch(.269 0 0);
-    --muted-foreground: oklch(.708 0 0);
-    --accent: oklch(.269 0 0);
-    --accent-foreground: oklch(.985 0 0);
-    --destructive: oklch(.396 .141 25.723);
-    --destructive-foreground: oklch(.637 .237 25.331);
-    --border: oklch(.269 0 0);
-    --input: oklch(.269 0 0);
-    --ring: oklch(.439 0 0);
-}
-
-/* ✅ Base: mantiene tipografia e usa le variabili tema */
 @layer base {
-    html {
-        font-size: var(--font-size);
-        font-family: var(--font-sans);
-        -webkit-font-smoothing: antialiased;
-        -moz-osx-font-smoothing: grayscale;
-    }
+  html {
+    font-family: var(--font-sans);
+    -webkit-font-smoothing: antialiased;
+    -moz-osx-font-smoothing: grayscale;
+  }
 
-    body {
-        background-color: var(--background);
-        color: var(--foreground);
-    }
+  body {
+    background-color: var(--background, #fff);
+    color: var(--foreground, #000);
+  }
 
-    /* ✅ utile per PDF/anteprima: strong/b davvero in grassetto */
-    strong, b {
-        font-weight: var(--font-weight-bold);
-    }
+  strong, b {
+    font-weight: var(--font-weight-bold);
+  }
 }
 
 @media print {
-    * {
-        -webkit-print-color-adjust: exact;
-        print-color-adjust: exact;
-    }
+  * {
+    -webkit-print-color-adjust: exact;
+    print-color-adjust: exact;
+  }
 }
-
-@layer theme {
-    :root {
-        --font-weight-semibold: 600;
-        --font-weight-bold: 700;
-        --font-weight-extrabold: 800;
-    }
-}
-
