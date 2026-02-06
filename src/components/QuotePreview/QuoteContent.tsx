@@ -11,26 +11,34 @@ interface QuoteContentProps {
 export function QuoteContent({ data, calculations }: QuoteContentProps) {
   return (
     <div className="px-10">
-      <div className="my-6 rich-text-content">
+      {/* Blocco: descrizione */}
+      <div data-pdf-block className="my-6 rich-text-content">
         <div dangerouslySetInnerHTML={{ __html: data.serviceDescription }} />
       </div>
 
       {data.services.length > 0 && (
         <div className="my-8">
-          <div className="flex justify-between text-sm font-medium text-black border-b-2 border-black pb-2">
+          {/* Blocco: intestazione tabella */}
+          <div data-pdf-block className="flex justify-between text-sm font-medium text-black border-b-2 border-black pb-2">
             <p>Servizio</p>
             <p className="w-40 text-right">Costo</p>
           </div>
 
+          {/* Blocco: ogni riga servizio */}
           <div className="border-b border-black">
             {data.services.map((service, index) => (
-              <ServiceRow key={index} service={service} />
+              <div key={index} data-pdf-block>
+                <ServiceRow service={service} />
+              </div>
             ))}
           </div>
         </div>
       )}
 
-      <TotalsSummary calculations={calculations} />
+      {/* Blocco: totali */}
+      <div data-pdf-block>
+        <TotalsSummary calculations={calculations} />
+      </div>
     </div>
   );
 }

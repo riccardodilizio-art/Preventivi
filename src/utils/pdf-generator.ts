@@ -17,22 +17,26 @@ interface GeneratePdfParams {
   footerElement: HTMLElement;
 }
 
+interface BlockImage {
+  dataUrl: string;
+  widthMm: number;
+  heightMm: number;
+}
+
 export async function generateQuotePdf({
   subject,
   headerElement,
   contentElement,
   footerElement,
 }: GeneratePdfParams): Promise<void> {
-  // Cattura header, contenuto e footer come immagini (preserva lo stile CSS)
-  const [headerDataUrl, contentDataUrl, footerDataUrl] = await Promise.all([
+  // 1) Cattura header e footer
+  const [headerDataUrl, footerDataUrl] = await Promise.all([
     captureElement(headerElement),
-    captureElement(contentElement),
     captureElement(footerElement),
   ]);
 
-  const [headerImg, contentImg, footerImg] = await Promise.all([
+  const [headerImg, footerImg] = await Promise.all([
     loadImage(headerDataUrl),
-    loadImage(contentDataUrl),
     loadImage(footerDataUrl),
   ]);
 
@@ -40,74 +44,94 @@ export async function generateQuotePdf({
   const pageWidth = pdf.internal.pageSize.getWidth();
   const pageHeight = pdf.internal.pageSize.getHeight();
 
-  // Calcola altezze header e footer in mm (scalati alla larghezza pagina)
   const headerHeightMm = (headerImg.height * pageWidth) / headerImg.width;
   const footerHeightMm = (footerImg.height * pageWidth) / footerImg.width;
 
-  // Area utile per il contenuto su ogni pagina
   const contentTopY = headerHeightMm;
   const contentBottomY = pageHeight - footerHeightMm;
   const availableHeightMm = contentBottomY - contentTopY;
 
-  // Dimensioni del contenuto scalato
-  const contentWidthMm = pageWidth;
-  const contentHeightMm = (contentImg.height * pageWidth) / contentImg.width;
-
-  // Funzione per disegnare header e footer sulla pagina corrente
   const addHeaderFooter = () => {
     pdf.addImage(headerDataUrl, 'PNG', 0, 0, pageWidth, headerHeightMm);
     pdf.addImage(footerDataUrl, 'PNG', 0, pageHeight - footerHeightMm, pageWidth, footerHeightMm);
   };
 
-  // Se il contenuto sta in una pagina
-  if (contentHeightMm <= availableHeightMm) {
-    addHeaderFooter();
-    pdf.addImage(contentDataUrl, 'PNG', 0, contentTopY, contentWidthMm, contentHeightMm);
-  } else {
-    // Contenuto troppo alto: splitta su più pagine con header/footer ripetuti
-    const canvas = document.createElement('canvas');
-    canvas.width = contentImg.width;
-    canvas.height = contentImg.height;
-    const ctx = canvas.getContext('2d');
-    if (!ctx) throw new Error('Impossibile creare canvas context');
-    ctx.drawImage(contentImg, 0, 0);
+  // 2) Trova tutti i blocchi logici [data-pdf-block] nel contenuto
+  const blockElements = contentElement.querySelectorAll<HTMLElement>('[data-pdf-block]');
 
-    const pxPerMm = contentImg.width / contentWidthMm;
-    const availableHeightPx = availableHeightMm * pxPerMm;
+  // 3) Cattura ogni blocco come immagine separata
+  const blockImages: BlockImage[] = [];
+  for (const el of blockElements) {
+    const dataUrl = await captureElement(el);
+    const img = await loadImage(dataUrl);
+    blockImages.push({
+      dataUrl,
+      widthMm: pageWidth,
+      heightMm: (img.height * pageWidth) / img.width,
+    });
+  }
 
-    let srcY = 0;
-    let isFirstPage = true;
+  // 4) Posiziona i blocchi nel PDF, con page break intelligenti
+  addHeaderFooter();
+  let currentY = contentTopY;
 
-    while (srcY < contentImg.height) {
-      if (!isFirstPage) {
-        pdf.addPage();
-      }
-
-      // Header e footer su ogni pagina
+  for (const block of blockImages) {
+    // Se il blocco non entra nella pagina corrente, nuova pagina
+    if (currentY + block.heightMm > contentBottomY && currentY > contentTopY) {
+      pdf.addPage();
       addHeaderFooter();
+      currentY = contentTopY;
+    }
 
-      // Ritaglia la fetta di contenuto per questa pagina
-      const sliceHeightPx = Math.min(availableHeightPx, contentImg.height - srcY);
-      const sliceHeightMm = sliceHeightPx / pxPerMm;
+    // Se un singolo blocco è più alto dello spazio disponibile,
+    // lo splitta su più pagine (caso raro: descrizione molto lunga)
+    if (block.heightMm > availableHeightMm) {
+      const blockImg = await loadImage(block.dataUrl);
+      const canvas = document.createElement('canvas');
+      canvas.width = blockImg.width;
+      canvas.height = blockImg.height;
+      const ctx = canvas.getContext('2d');
+      if (!ctx) continue;
+      ctx.drawImage(blockImg, 0, 0);
 
-      const sliceCanvas = document.createElement('canvas');
-      sliceCanvas.width = contentImg.width;
-      sliceCanvas.height = sliceHeightPx;
-      const sliceCtx = sliceCanvas.getContext('2d');
-      if (sliceCtx) {
-        sliceCtx.fillStyle = '#ffffff';
-        sliceCtx.fillRect(0, 0, sliceCanvas.width, sliceCanvas.height);
-        sliceCtx.drawImage(
-          canvas,
-          0, srcY, contentImg.width, sliceHeightPx,
-          0, 0, contentImg.width, sliceHeightPx,
-        );
-        const sliceUrl = sliceCanvas.toDataURL('image/png');
-        pdf.addImage(sliceUrl, 'PNG', 0, contentTopY, contentWidthMm, sliceHeightMm);
+      const pxPerMm = blockImg.width / pageWidth;
+      let srcY = 0;
+
+      while (srcY < blockImg.height) {
+        const sliceAvailMm = contentBottomY - currentY;
+        const sliceAvailPx = sliceAvailMm * pxPerMm;
+        const sliceHeightPx = Math.min(sliceAvailPx, blockImg.height - srcY);
+        const sliceHeightMm = sliceHeightPx / pxPerMm;
+
+        const sliceCanvas = document.createElement('canvas');
+        sliceCanvas.width = blockImg.width;
+        sliceCanvas.height = sliceHeightPx;
+        const sliceCtx = sliceCanvas.getContext('2d');
+        if (sliceCtx) {
+          sliceCtx.fillStyle = '#ffffff';
+          sliceCtx.fillRect(0, 0, sliceCanvas.width, sliceCanvas.height);
+          sliceCtx.drawImage(
+            canvas,
+            0, srcY, blockImg.width, sliceHeightPx,
+            0, 0, blockImg.width, sliceHeightPx,
+          );
+          const sliceUrl = sliceCanvas.toDataURL('image/png');
+          pdf.addImage(sliceUrl, 'PNG', 0, currentY, pageWidth, sliceHeightMm);
+        }
+
+        srcY += sliceHeightPx;
+        currentY += sliceHeightMm;
+
+        if (srcY < blockImg.height) {
+          pdf.addPage();
+          addHeaderFooter();
+          currentY = contentTopY;
+        }
       }
-
-      srcY += sliceHeightPx;
-      isFirstPage = false;
+    } else {
+      // Blocco normale: inserisci nella pagina corrente
+      pdf.addImage(block.dataUrl, 'PNG', 0, currentY, block.widthMm, block.heightMm);
+      currentY += block.heightMm;
     }
   }
 
