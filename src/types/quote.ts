@@ -26,9 +26,20 @@ export interface QuoteData {
 }
 
 export interface ServiceItem {
+    /** Nome del servizio principale (o del sottoservizio) */
     description: string;
+
+    /** Costo SOLO del servizio principale (vuoto/undefined per i sottoservizi) */
     cost?: string;
 
-    /** Se true applica IVA a questo servizio */
+    /** Se true applica IVA a questo servizio (tipicamente solo sul principale) */
     vat?: boolean;
+
+    /** Lista sottoservizi (senza costo) */
+    subservices?: SubServiceItem[];
 }
+
+export interface SubServiceItem {
+    description: string;
+}
+

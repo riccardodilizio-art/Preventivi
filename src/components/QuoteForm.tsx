@@ -1,11 +1,59 @@
 import { useForm, useFieldArray } from 'react-hook-form';
 import { QuoteData } from '../types/quote';
 import { Plus, Trash2, FileText } from 'lucide-react';
+import type { Control, UseFormRegister } from 'react-hook-form';
 
 interface QuoteFormProps {
     onSubmit: (data: QuoteData) => void;
     initialData?: QuoteData | null;
 }
+
+function SubservicesEditor({
+                               serviceIndex,
+                               control,
+                               register,
+                           }: {
+    serviceIndex: number;
+    control: Control<QuoteData>;
+    register: UseFormRegister<QuoteData>;
+}) {
+    const { fields, append, remove } = useFieldArray({
+        control,
+        name: `services.${serviceIndex}.subservices` as const,
+    });
+
+    return (
+        <div className="mt-2 ml-6 pl-4 border-l border-gray-200 space-y-2">
+            {fields.map((f, subIndex) => (
+                <div key={f.id} className="flex items-start gap-2">
+                    <input
+                        {...register(`services.${serviceIndex}.subservices.${subIndex}.description` as const)}
+                        className="flex-1 px-4 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-transparent"
+                        placeholder={`Sottoservizio ${subIndex + 1} (senza costo)`}
+                    />
+                    <button
+                        type="button"
+                        onClick={() => remove(subIndex)}
+                        className="px-3 py-2 bg-red-500 text-white rounded-lg hover:bg-red-600 transition-colors"
+                        aria-label="Rimuovi sottoservizio"
+                    >
+                        <Trash2 className="w-5 h-5" />
+                    </button>
+                </div>
+            ))}
+
+            <button
+                type="button"
+                onClick={() => append({ description: '' })}
+                className="flex items-center gap-2 px-3 py-2 bg-blue-100 text-blue-700 rounded-lg hover:bg-blue-200 transition-colors"
+            >
+                <Plus className="w-4 h-4" />
+                Aggiungi sottoservizio
+            </button>
+        </div>
+    );
+}
+
 
 export function QuoteForm({ onSubmit, initialData }: QuoteFormProps) {
     const {
@@ -22,7 +70,7 @@ export function QuoteForm({ onSubmit, initialData }: QuoteFormProps) {
             vatNumber: '',
             subject: '',
             serviceDescription: '',
-            services: [{ description: '', cost: '', vat: true }], // ✅ VAT default ON
+            services: [{ description: '', cost: '', vat: true, subservices: [] }],
             totalCost: '',
             location: '',
             date: new Date().toISOString().split('T')[0],
@@ -36,12 +84,21 @@ export function QuoteForm({ onSubmit, initialData }: QuoteFormProps) {
     });
 
     const onFormSubmit = (data: QuoteData) => {
-        const filteredData = {
-            ...data,
-            services: (data.services || []).filter((service) => service.description.trim() !== '')
-        };
-        onSubmit(filteredData);
+        const services = (data.services || [])
+            .map((s) => ({
+                ...s,
+                subservices: (s.subservices || []).filter((x) => x.description.trim() !== ''),
+            }))
+            .filter(
+                (s) =>
+                    s.description.trim() !== '' ||
+                    (s.cost?.trim() ?? '') !== '' ||
+                    (s.subservices?.length ?? 0) > 0
+            );
+
+        onSubmit({ ...data, services });
     };
+
 
     return (
         <div className="max-w-4xl mx-auto p-6">
@@ -151,62 +208,65 @@ export function QuoteForm({ onSubmit, initialData }: QuoteFormProps) {
 
                         <div className="space-y-3">
                             {fields.map((field, index) => (
-                                <div key={field.id} className="flex gap-3 items-start">
-                                    {/* Descrizione */}
-                                    <input
-                                        {...register(`services.${index}.description` as const)}
-                                        className="flex-1 px-4 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-transparent"
-                                        placeholder={`Descrizione servizio ${index + 1}`}
-                                    />
-
-                                    {/* Costo */}
-                                    <div className="relative w-36">
+                                <div key={field.id} className="space-y-2">
+                                    <div className="flex gap-3 items-start">
+                                        {/* Descrizione servizio principale */}
                                         <input
-                                            {...register(`services.${index}.cost` as const, {
-                                                setValueAs: (v) => String(v ?? '').replace(/[^\d.,]/g, ''),
-                                                pattern: {
-                                                    value: /^[0-9.,]*$/,
-                                                    message: 'Inserisci solo numeri'
-                                                }
-                                            })}
-                                            inputMode="decimal"
-                                            className="w-full px-4 py-2 text-right border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-transparent"
-                                            placeholder="0,00  "
+                                            {...register(`services.${index}.description` as const)}
+                                            className="flex-1 px-4 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-transparent"
+                                            placeholder={`Servizio principale ${index + 1}`}
                                         />
-                                        <span className="absolute right-3 top-1/2 -translate-y-1/2 text-gray-500 select-none">
-      €
-    </span>
+
+                                        {/* Costo servizio principale */}
+                                        <div className="relative w-36">
+                                            <input
+                                                {...register(`services.${index}.cost` as const, {
+                                                    setValueAs: (v) => String(v ?? '').replace(/[^\d.,-]/g, ''),
+                                                    pattern: {
+                                                        value: /^[0-9.,-]*$/,
+                                                        message: 'Inserisci solo numeri',
+                                                    },
+                                                })}
+                                                inputMode="decimal"
+                                                className="w-full px-4 py-2 text-right border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-transparent"
+                                                placeholder="0,00"
+                                            />
+                                            <span className="absolute right-3 top-1/2 -translate-y-1/2 text-gray-500 select-none">
+          €
+        </span>
+                                        </div>
+
+                                        {/* Checkbox IVA */}
+                                        <label className="flex items-center gap-2 mt-1 select-none whitespace-nowrap">
+                                            <input
+                                                type="checkbox"
+                                                {...register(`services.${index}.vat` as const)}
+                                                className="h-4 w-4"
+                                            />
+                                            <span className="text-sm text-gray-700">Tasse</span>
+                                        </label>
+
+                                        {/* Rimuovi servizio principale */}
+                                        {fields.length > 1 && (
+                                            <button
+                                                type="button"
+                                                onClick={() => remove(index)}
+                                                className="px-4 py-2 bg-red-500 text-white rounded-lg hover:bg-red-600 transition-colors"
+                                                aria-label="Rimuovi servizio"
+                                            >
+                                                <Trash2 className="w-5 h-5" />
+                                            </button>
+                                        )}
                                     </div>
 
-                                    {/* Checkbox IVA */}
-                                    <label className="flex items-center gap-2 mt-1 select-none whitespace-nowrap">
-                                        <input
-                                            type="checkbox"
-                                            {...register(`services.${index}.vat` as const)}
-                                            className="h-4 w-4"
-                                            defaultChecked
-                                        />
-                                        <span className="text-sm text-gray-700">Tasse</span>
-                                    </label>
-
-                                    {/* Rimuovi */}
-                                    {fields.length > 1 && (
-                                        <button
-                                            type="button"
-                                            onClick={() => remove(index)}
-                                            className="px-4 py-2 bg-red-500 text-white rounded-lg hover:bg-red-600 transition-colors"
-                                            aria-label="Rimuovi servizio"
-                                        >
-                                            <Trash2 className="w-5 h-5" />
-                                        </button>
-                                    )}
+                                    {/* Sottoservizi (senza costo) */}
+                                    <SubservicesEditor serviceIndex={index} control={control} register={register} />
                                 </div>
-
                             ))}
 
                             <button
                                 type="button"
-                                onClick={() => append({ description: '', cost: '', vat: true })} // ✅ VAT default ON
+                                onClick={() => append({ description: '', cost: '', vat: true, subservices: [] })}
                                 className="flex items-center gap-2 px-4 py-2 bg-blue-500 text-white rounded-lg hover:bg-blue-600 transition-colors"
                             >
                                 <Plus className="w-5 h-5" />

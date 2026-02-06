@@ -31,9 +31,11 @@ interface QuotePreviewProps {
 
 interface Service {
     description: string;
-    cost: string;
-    vat: boolean;
+    cost?: string;
+    vat?: boolean;
+    subservices?: { description: string }[];
 }
+
 
 interface Calculations {
     taxable: number;
@@ -43,26 +45,37 @@ interface Calculations {
 }
 
 // ========== UTILITY FUNCTIONS ==========
-const parseItalianNumber = (raw: string | undefined): number | null => {
+const parseItalianNumber = (raw?: string): number | null => {
     if (!raw) return null;
-    const cleaned = String(raw).replace(/[^\d.,]/g, '').trim();
+    const cleaned = String(raw).replace(/[^\d.,-]/g, '').trim();
     if (!cleaned) return null;
-    const normalized = cleaned.replace(/\./g, '').replace(',', '.');
-    const n = Number(normalized);
+
+    // se ci sono più "-" tieni solo il primo all'inizio
+    const sign = cleaned.startsWith('-') ? '-' : '';
+    const unsigned = cleaned.replace(/-/g, '');
+
+    const normalized = unsigned.replace(/\./g, '').replace(',', '.');
+    const n = Number(sign + normalized);
     return Number.isFinite(n) ? n : null;
 };
 
+
+
+
 const formatEuroFromNumber = (n: number): string =>
-    n.toLocaleString(LOCALE_CONFIG.DATE, {
+    n.toLocaleString('it-IT', {
         style: 'currency',
-        currency: LOCALE_CONFIG.CURRENCY,
+        currency: 'EUR',
     });
 
-const formatEuro = (raw: string | undefined): string => {
-    if (!raw?.trim()) return '€ 0,00';
+
+
+const formatEuro = (raw?: string): string => {
+    if (!raw?.trim()) return ''; // invece di € 0,00
     const n = parseItalianNumber(raw);
     return n !== null ? formatEuroFromNumber(n) : raw;
 };
+
 
 const formatDate = (dateString: string): string => {
     const date = new Date(dateString);
@@ -108,16 +121,28 @@ const useQuoteCalculations = (services: Service[] = []): Calculations => {
 
 // ========== SUB-COMPONENTS ==========
 const ServiceRow = ({ service }: { service: Service }) => (
-    <div className="flex justify-between items-start gap-6 py-3 border-t border-black">
-        <p className="font-bold flex-1 text-black">{service.description}</p>
-        <div className="w-40 text-right whitespace-nowrap">
-            <p className="font-bold text-black">{formatEuro(service.cost)}</p>
-            <p className="text-xs text-black">
-                {service.vat ? 'Soggetto a Tasse' : 'Non soggetto a Tasse'}
-            </p>
+    <div className="py-3 border-t border-black">
+        <div className="flex justify-between items-start gap-6">
+            <p className="font-bold flex-1 text-black">{service.description}</p>
+
+            <div className="w-40 text-right whitespace-nowrap">
+                <p className="font-bold text-black">{formatEuro(service.cost)}</p>
+                <p className="text-xs text-black">
+                    {service.vat ? 'Soggetto a Tasse' : 'Non soggetto a Tasse'}
+                </p>
+            </div>
         </div>
+
+        {service.subservices?.length ? (
+            <ul className="ml-6 mt-2 list-disc text-sm text-black space-y-1">
+                {service.subservices.map((sub, i) => (
+                    <li key={i}>{sub.description}</li>
+                ))}
+            </ul>
+        ) : null}
     </div>
 );
+
 
 const TotalsSummary = ({ calculations }: { calculations: Calculations }) => (
     <div className="mt-7 flex justify-end">
@@ -252,7 +277,6 @@ export function QuotePreview({ data, onBack }: QuotePreviewProps) {
         setIsGenerating(true);
 
         try {
-            // Cattura header e footer come immagini
             const [headerDataUrl, footerDataUrl] = await Promise.all([
                 captureElement(headerRef.current),
                 captureElement(footerRef.current),
@@ -267,96 +291,138 @@ export function QuotePreview({ data, onBack }: QuotePreviewProps) {
             const pageWidth = pdf.internal.pageSize.getWidth();
             const pageHeight = pdf.internal.pageSize.getHeight();
 
-            // Calcola altezze header e footer
-            const headerHeight = (headerImg.height * pageWidth) / headerImg.width;
+            // Header/footer heights (mm)
+            const maxHeaderHeight = 60;
+            const computedHeaderHeight = (headerImg.height * pageWidth) / headerImg.width;
+            const headerHeight = Math.min(computedHeaderHeight, maxHeaderHeight);
             const footerHeight = (footerImg.height * pageWidth) / footerImg.width;
 
-            // Funzione per aggiungere header
-            const addHeader = () => {
+            const paddingX = 20;
+            const paddingY = 10;
+
+            const topY = headerHeight + paddingY;
+            const bottomY = pageHeight - footerHeight - paddingY;
+
+            const addHeaderFooter = () => {
                 pdf.addImage(headerDataUrl, 'PNG', 0, 0, pageWidth, headerHeight);
+                const footerY = pageHeight - footerHeight;
+                pdf.addImage(footerDataUrl, 'PNG', 0, footerY, pageWidth, footerHeight);
             };
 
-            // Funzione per aggiungere footer
-            const addFooter = (isLastPage: boolean = false) => {
-                if (isLastPage) {
-                    const footerY = pageHeight - footerHeight;
-                    pdf.addImage(footerDataUrl, 'PNG', 0, footerY, pageWidth, footerHeight);
-                }
+            const newPage = () => {
+                pdf.addPage();
+                addHeaderFooter();
+                return topY;
             };
 
-            let currentY = headerHeight + 10;
+            // Prima pagina
+            addHeaderFooter();
+            let currentY = topY;
 
-            // Aggiungi header alla prima pagina
-            addHeader();
-
-            // Descrizione del servizio
-            if (data.serviceDescription) {
+            // ====== 1) DESCRIZIONE MULTI-PAGINA ======
+            if (data.serviceDescription?.trim()) {
                 pdf.setFontSize(10);
                 pdf.setFont('helvetica', 'normal');
-                const lines = pdf.splitTextToSize(data.serviceDescription, pageWidth - 40);
 
-                // Controlla se c'è spazio sufficiente
-                const textHeight = lines.length * 5;
-                if (currentY + textHeight > pageHeight - footerHeight - 20) {
-                    pdf.addPage();
-                    addHeader();
-                    currentY = headerHeight + 10;
+                const lineHeight = 5; // mm
+                const lines = pdf.splitTextToSize(
+                    data.serviceDescription,
+                    pageWidth - paddingX * 2
+                );
+
+                for (const line of lines) {
+                    if (currentY + lineHeight > bottomY) {
+                        currentY = newPage();
+                    }
+                    pdf.text(String(line), paddingX, currentY);
+                    currentY += lineHeight;
                 }
 
-                pdf.text(lines, 20, currentY);
-                currentY += textHeight + 10;
+                currentY += 6; // spazio dopo descrizione
             }
 
-            // Tabella servizi con autoTable
-            if (data.services && data.services.length > 0) {
-                const tableData = data.services.map((service) => [
-                    service.description,
-                    formatEuro(service.cost),
-                    service.vat ? 'Soggetto a Tasse' : 'Non soggetto a Tasse',
-                ]);
+            // ====== 2) TABELLA SERVIZI (AUTO-SPLIT) ======
+            if (data.services?.length) {
+                const tableData = (data.services || []).flatMap((service) => {
+                    const mainRow = [
+                        service.description,
+                        formatEuro(service.cost),
+                        service.vat ? 'Soggetto a Tasse' : 'Non soggetto a Tasse',
+                    ];
+
+                    const subRows = (service.subservices || [])
+                        .filter((s) => s.description.trim() !== '')
+                        .map((sub) => [
+                            `   • ${sub.description}`, // indent “visivo”
+                            '',                        // costo vuoto
+                            '',                        // tasse vuoto
+                        ]);
+
+                    return [mainRow, ...subRows];
+                });
+
 
                 autoTable(pdf, {
                     head: [['Servizio', 'Costo', 'Tasse']],
                     body: tableData,
+
                     startY: currentY,
-                    margin: { left: 20, right: 20 },
+
+                    // IMPORTANTISSIMO: margini che rispettano header/footer
+                    margin: {
+                        left: paddingX,
+                        right: paddingX,
+                        top: topY,
+                        bottom: pageHeight - bottomY, // spazio riservato al footer + padding
+                    },
+
                     styles: {
                         fontSize: 9,
                         cellPadding: 4,
+                        overflow: 'linebreak',
+                        valign: 'top',
                     },
+
                     headStyles: {
                         fillColor: [0, 0, 0],
                         textColor: [255, 255, 255],
                         fontStyle: 'bold',
                         halign: 'left',
                     },
+
                     columnStyles: {
                         0: { cellWidth: 'auto' },
                         1: { cellWidth: 40, halign: 'right' },
                         2: { cellWidth: 50, fontSize: 8, halign: 'center' },
                     },
-                    didDrawPage: (data) => {
-                        // Aggiungi header su ogni nuova pagina
-                        if (data.pageNumber > 1) {
-                            addHeader();
+
+                    // ridisegna header/footer su OGNI pagina generata
+                    didDrawPage: () => {
+                        addHeaderFooter();
+                    },
+
+                    didParseCell: (hook) => {
+                        const text = String(hook.cell.text?.[0] ?? '');
+                        const isSub = text.trim().startsWith('•');
+                        if (isSub) {
+                            hook.cell.styles.fontSize = 8;
+                            hook.cell.styles.fontStyle = 'normal';
                         }
+
                     },
                 });
 
                 currentY = (pdf as any).lastAutoTable.finalY + 10;
             }
 
-            // Controlla se c'è spazio per il riepilogo totali
-            const summaryHeight = 50; // Altezza stimata del box totali
-            if (currentY + summaryHeight + footerHeight + 20 > pageHeight) {
-                pdf.addPage();
-                addHeader();
-                currentY = headerHeight + 10;
+            // ====== 3) BOX TOTALI (SE NON C'È SPAZIO, NUOVA PAGINA) ======
+            const summaryHeight = 50;
+            if (currentY + summaryHeight > bottomY) {
+                currentY = newPage();
             }
 
-            // Box riepilogo totali
             const boxWidth = 80;
-            const boxX = pageWidth - boxWidth - 20;
+            const boxX = pageWidth - boxWidth - paddingX;
             const boxY = currentY;
             const lineHeight = 6;
 
@@ -367,54 +433,29 @@ export function QuotePreview({ data, onBack }: QuotePreviewProps) {
             pdf.setFontSize(9);
             let summaryY = boxY + 8;
 
-            // Imponibile con tasse
             pdf.setFont('helvetica', 'normal');
             pdf.text('Imponibile (Tasse)', boxX + 5, summaryY);
-            pdf.text(formatEuroFromNumber(calculations.taxable), boxX + boxWidth - 5, summaryY, {
-                align: 'right',
-            });
+            pdf.text(formatEuroFromNumber(calculations.taxable), boxX + boxWidth - 5, summaryY, { align: 'right' });
             summaryY += lineHeight;
 
-            // Imponibile senza tasse
             pdf.text('Imponibile (non soggetto a Tasse)', boxX + 5, summaryY);
-            pdf.text(formatEuroFromNumber(calculations.nonTaxable), boxX + boxWidth - 5, summaryY, {
-                align: 'right',
-            });
+            pdf.text(formatEuroFromNumber(calculations.nonTaxable), boxX + boxWidth - 5, summaryY, { align: 'right' });
             summaryY += lineHeight;
 
-            // IVA
             pdf.text('Tasse (20%)', boxX + 5, summaryY);
-            pdf.text(formatEuroFromNumber(calculations.iva), boxX + boxWidth - 5, summaryY, {
-                align: 'right',
-            });
+            pdf.text(formatEuroFromNumber(calculations.iva), boxX + boxWidth - 5, summaryY, { align: 'right' });
             summaryY += lineHeight + 2;
 
-            // Linea separatrice
             pdf.line(boxX + 5, summaryY, boxX + boxWidth - 5, summaryY);
             summaryY += 5;
 
-            // Totale
             pdf.setFont('helvetica', 'bold');
             pdf.text('Totale', boxX + 5, summaryY);
-            pdf.text(formatEuroFromNumber(calculations.total), boxX + boxWidth - 5, summaryY, {
-                align: 'right',
-            });
-            summaryY += lineHeight + 2;
-
-            // Nota importi
-            pdf.setFontSize(7);
-            pdf.setFont('helvetica', 'italic');
-            pdf.text('Importi espressi in Euro.', boxX + 5, summaryY);
-
-            currentY = boxY + summaryHeight + 15;
-
-            // Aggiungi footer
-            addFooter(true);
+            pdf.text(formatEuroFromNumber(calculations.total), boxX + boxWidth - 5, summaryY, { align: 'right' });
 
             pdf.save(`Preventivo_${data.subject?.replace(/\s+/g, '_') || 'Documento'}.pdf`);
-            console.log('✅ PDF generato con successo');
         } catch (error) {
-            console.error('❌ Errore durante la generazione del PDF:', error);
+            console.error(error);
             alert('Si è verificato un errore durante la generazione del PDF. Riprova.');
         } finally {
             setIsGenerating(false);
