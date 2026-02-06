@@ -15,12 +15,14 @@ interface QuotePreviewProps {
 export function QuotePreview({ data, onBack }: QuotePreviewProps) {
   const [isGenerating, setIsGenerating] = useState(false);
   const [error, setError] = useState<string | null>(null);
-  const previewRef = useRef<HTMLDivElement>(null);
+  const headerRef = useRef<HTMLDivElement>(null);
+  const contentRef = useRef<HTMLDivElement>(null);
+  const footerRef = useRef<HTMLDivElement>(null);
 
   const calculations = useQuoteCalculations(data.services);
 
   const handleDownloadPdf = useCallback(async () => {
-    if (!previewRef.current) {
+    if (!headerRef.current || !contentRef.current || !footerRef.current) {
       setError('Elementi non pronti per la generazione del PDF.');
       return;
     }
@@ -31,7 +33,9 @@ export function QuotePreview({ data, onBack }: QuotePreviewProps) {
     try {
       await generateQuotePdf({
         subject: data.subject,
-        previewElement: previewRef.current,
+        headerElement: headerRef.current,
+        contentElement: contentRef.current,
+        footerElement: footerRef.current,
       });
     } catch (err) {
       console.error('Errore generazione PDF:', err);
@@ -58,10 +62,18 @@ export function QuotePreview({ data, onBack }: QuotePreviewProps) {
       )}
 
       <div className="max-w-4xl mx-auto p-6">
-        <div ref={previewRef} className="bg-white shadow-lg">
-          <QuoteHeader data={data} />
-          <QuoteContent data={data} calculations={calculations} />
-          <QuoteFooter data={data} />
+        <div className="bg-white shadow-lg">
+          <div ref={headerRef}>
+            <QuoteHeader data={data} />
+          </div>
+
+          <div ref={contentRef}>
+            <QuoteContent data={data} calculations={calculations} />
+          </div>
+
+          <div ref={footerRef}>
+            <QuoteFooter data={data} />
+          </div>
         </div>
       </div>
     </div>
