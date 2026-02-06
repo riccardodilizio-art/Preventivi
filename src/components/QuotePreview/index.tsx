@@ -15,14 +15,12 @@ interface QuotePreviewProps {
 export function QuotePreview({ data, onBack }: QuotePreviewProps) {
   const [isGenerating, setIsGenerating] = useState(false);
   const [error, setError] = useState<string | null>(null);
-  const headerRef = useRef<HTMLDivElement>(null);
-  const footerRef = useRef<HTMLDivElement>(null);
-  const descriptionRef = useRef<HTMLDivElement>(null);
+  const previewRef = useRef<HTMLDivElement>(null);
 
   const calculations = useQuoteCalculations(data.services);
 
   const handleDownloadPdf = useCallback(async () => {
-    if (!headerRef.current || !footerRef.current) {
+    if (!previewRef.current) {
       setError('Elementi non pronti per la generazione del PDF.');
       return;
     }
@@ -32,11 +30,8 @@ export function QuotePreview({ data, onBack }: QuotePreviewProps) {
 
     try {
       await generateQuotePdf({
-        data,
-        calculations,
-        headerElement: headerRef.current,
-        footerElement: footerRef.current,
-        descriptionElement: descriptionRef.current,
+        subject: data.subject,
+        previewElement: previewRef.current,
       });
     } catch (err) {
       console.error('Errore generazione PDF:', err);
@@ -44,7 +39,7 @@ export function QuotePreview({ data, onBack }: QuotePreviewProps) {
     } finally {
       setIsGenerating(false);
     }
-  }, [data, calculations]);
+  }, [data.subject]);
 
   return (
     <div className="min-h-screen bg-gray-100">
@@ -63,16 +58,10 @@ export function QuotePreview({ data, onBack }: QuotePreviewProps) {
       )}
 
       <div className="max-w-4xl mx-auto p-6">
-        <div className="bg-white shadow-lg">
-          <div ref={headerRef}>
-            <QuoteHeader data={data} />
-          </div>
-
-          <QuoteContent ref={descriptionRef} data={data} calculations={calculations} />
-
-          <div ref={footerRef}>
-            <QuoteFooter data={data} />
-          </div>
+        <div ref={previewRef} className="bg-white shadow-lg">
+          <QuoteHeader data={data} />
+          <QuoteContent data={data} calculations={calculations} />
+          <QuoteFooter data={data} />
         </div>
       </div>
     </div>
