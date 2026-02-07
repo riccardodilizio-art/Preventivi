@@ -8,43 +8,39 @@ import type { ServiceItem } from '@/types/quote';
 import type { Calculations } from '@/hooks/useQuoteCalculations';
 
 const captureElement = async (element: HTMLElement): Promise<string> => {
+  // Precalcola colori rgb dal DOM originale (il browser risolve oklch → rgb)
+  const origEls = [element, ...element.querySelectorAll<HTMLElement>('*')];
+  const rgbColors = origEls.map((el) => {
+    const cs = window.getComputedStyle(el);
+    return {
+      color: cs.color,
+      backgroundColor: cs.backgroundColor,
+      borderTopColor: cs.borderTopColor,
+      borderRightColor: cs.borderRightColor,
+      borderBottomColor: cs.borderBottomColor,
+      borderLeftColor: cs.borderLeftColor,
+    };
+  });
+
   const canvas = await html2canvas(element, {
     scale: PDF_CONFIG.PIXEL_RATIO,
     backgroundColor: PDF_CONFIG.BACKGROUND_COLOR,
     useCORS: true,
     logging: false,
-    onclone: (clonedDoc) => {
+    onclone: (_clonedDoc, clonedEl) => {
       // html2canvas 1.4.1 non supporta oklch() (Tailwind CSS 4).
-      // 1) Sostituisci oklch() in tutti i <style> del clone con un fallback sicuro
-      clonedDoc.querySelectorAll('style').forEach((style) => {
-        if (style.textContent?.includes('oklch')) {
-          style.textContent = style.textContent.replace(
-            /oklch\([^)]*\)/g,
-            'rgb(0, 0, 0)',
-          );
-        }
-      });
-
-      // 2) Imposta colori rgb inline su tutti gli elementi del clone
-      //    (calcolati dal browser originale che supporta oklch)
-      const clonedEl = clonedDoc.body;
-      const origEls = [element, ...element.querySelectorAll<HTMLElement>('*')];
-      const clonedEls = [
-        clonedDoc.querySelector(`[data-html2canvas-clone]`) as HTMLElement || clonedEl,
-        ...clonedEl.querySelectorAll<HTMLElement>('*'),
-      ];
-
-      // Match by index between original and cloned elements
-      origEls.forEach((origEl, i) => {
-        const cloneEl = clonedEls[i];
-        if (!cloneEl) return;
-        const cs = window.getComputedStyle(origEl);
-        cloneEl.style.color = cs.color;
-        cloneEl.style.backgroundColor = cs.backgroundColor;
-        cloneEl.style.borderTopColor = cs.borderTopColor;
-        cloneEl.style.borderRightColor = cs.borderRightColor;
-        cloneEl.style.borderBottomColor = cs.borderBottomColor;
-        cloneEl.style.borderLeftColor = cs.borderLeftColor;
+      // Imposta colori rgb precalcolati come inline styles sul clone.
+      // Gli stili inline hanno priorità massima → html2canvas non parsa oklch.
+      const clonedEls = [clonedEl, ...clonedEl.querySelectorAll<HTMLElement>('*')];
+      clonedEls.forEach((el, i) => {
+        const colors = rgbColors[i];
+        if (!colors) return;
+        el.style.setProperty('color', colors.color, 'important');
+        el.style.setProperty('background-color', colors.backgroundColor, 'important');
+        el.style.setProperty('border-top-color', colors.borderTopColor, 'important');
+        el.style.setProperty('border-right-color', colors.borderRightColor, 'important');
+        el.style.setProperty('border-bottom-color', colors.borderBottomColor, 'important');
+        el.style.setProperty('border-left-color', colors.borderLeftColor, 'important');
       });
     },
   });
