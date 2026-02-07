@@ -7,15 +7,27 @@ import { formatEuro } from '@/utils/formatting';
 import type { ServiceItem } from '@/types/quote';
 import type { Calculations } from '@/hooks/useQuoteCalculations';
 
-const captureElement = (element: HTMLElement): Promise<string> => {
+const captureElement = async (element: HTMLElement): Promise<string> => {
+  // Imposta larghezza inline così il clone di html-to-image
+  // mantiene il vincolo di larghezza (il clone non ha il contesto del padre)
+  const prevWidth = element.style.width;
+  const prevMaxWidth = element.style.maxWidth;
   const rect = element.getBoundingClientRect();
-  return toPng(element, {
-    cacheBust: true,
-    pixelRatio: PDF_CONFIG.PIXEL_RATIO,
-    backgroundColor: PDF_CONFIG.BACKGROUND_COLOR,
-    width: rect.width,
-    height: rect.height,
-  });
+  element.style.width = `${rect.width}px`;
+  element.style.maxWidth = `${rect.width}px`;
+
+  try {
+    const dataUrl = await toPng(element, {
+      cacheBust: true,
+      pixelRatio: PDF_CONFIG.PIXEL_RATIO,
+      backgroundColor: PDF_CONFIG.BACKGROUND_COLOR,
+    });
+    return dataUrl;
+  } finally {
+    // Ripristina sempre gli stili originali
+    element.style.width = prevWidth;
+    element.style.maxWidth = prevMaxWidth;
+  }
 };
 
 interface GeneratePdfParams {
