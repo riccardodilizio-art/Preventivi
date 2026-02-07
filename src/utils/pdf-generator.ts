@@ -8,13 +8,32 @@ import type { ServiceItem } from '@/types/quote';
 import type { Calculations } from '@/hooks/useQuoteCalculations';
 
 const captureElement = async (element: HTMLElement): Promise<string> => {
-  // Imposta larghezza inline così il clone di html-to-image
-  // mantiene il vincolo di larghezza (il clone non ha il contesto del padre)
-  const prevWidth = element.style.width;
-  const prevMaxWidth = element.style.maxWidth;
+  // Salva stili originali
+  const saved = {
+    width: element.style.width,
+    maxWidth: element.style.maxWidth,
+    wordBreak: element.style.wordBreak,
+    overflowWrap: element.style.overflowWrap,
+    boxSizing: element.style.boxSizing,
+  };
+
+  // Forza larghezza e word-wrap inline - il clone di html-to-image
+  // non ha il contesto del padre e @layer CSS potrebbe non essere risolto
   const rect = element.getBoundingClientRect();
   element.style.width = `${rect.width}px`;
   element.style.maxWidth = `${rect.width}px`;
+  element.style.wordBreak = 'break-word';
+  element.style.overflowWrap = 'break-word';
+  element.style.boxSizing = 'border-box';
+
+  // Forza gli stessi stili anche su tutti i figli diretti
+  const children = element.querySelectorAll<HTMLElement>('*');
+  const childSaved: { el: HTMLElement; ow: string; wb: string }[] = [];
+  children.forEach((child) => {
+    childSaved.push({ el: child, ow: child.style.overflowWrap, wb: child.style.wordBreak });
+    child.style.overflowWrap = 'break-word';
+    child.style.wordBreak = 'break-word';
+  });
 
   try {
     const dataUrl = await toPng(element, {
@@ -24,9 +43,16 @@ const captureElement = async (element: HTMLElement): Promise<string> => {
     });
     return dataUrl;
   } finally {
-    // Ripristina sempre gli stili originali
-    element.style.width = prevWidth;
-    element.style.maxWidth = prevMaxWidth;
+    // Ripristina stili originali
+    element.style.width = saved.width;
+    element.style.maxWidth = saved.maxWidth;
+    element.style.wordBreak = saved.wordBreak;
+    element.style.overflowWrap = saved.overflowWrap;
+    element.style.boxSizing = saved.boxSizing;
+    childSaved.forEach(({ el, ow, wb }) => {
+      el.style.overflowWrap = ow;
+      el.style.wordBreak = wb;
+    });
   }
 };
 
