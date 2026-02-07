@@ -1,7 +1,11 @@
 import jsPDF from 'jspdf';
+import autoTable from 'jspdf-autotable';
 import { toPng } from 'html-to-image';
 import { PDF_CONFIG } from '@/constants';
 import { loadImage } from '@/utils/image';
+import { formatEuro } from '@/utils/formatting';
+import type { ServiceItem } from '@/types/quote';
+import type { Calculations } from '@/hooks/useQuoteCalculations';
 
 const captureElement = (element: HTMLElement): Promise<string> =>
   toPng(element, {
@@ -13,161 +17,174 @@ const captureElement = (element: HTMLElement): Promise<string> =>
 interface GeneratePdfParams {
   subject: string;
   headerElement: HTMLElement;
-  contentElement: HTMLElement;
   footerElement: HTMLElement;
+  descriptionElement: HTMLElement | null;
+  totalsElement: HTMLElement | null;
+  services: ServiceItem[];
+  calculations: Calculations;
 }
 
 export async function generateQuotePdf({
   subject,
   headerElement,
-  contentElement,
   footerElement,
+  descriptionElement,
+  totalsElement,
+  services,
+  calculations: _calculations,
 }: GeneratePdfParams): Promise<void> {
-  // 1) Cattura header, contenuto intero e footer come immagini
-  const [headerDataUrl, contentDataUrl, footerDataUrl] = await Promise.all([
-    captureElement(headerElement),
-    captureElement(contentElement),
-    captureElement(footerElement),
-  ]);
+  // 1) Cattura immagini di header, footer, descrizione e totali
+  const headerDataUrl = await captureElement(headerElement);
+  const footerDataUrl = await captureElement(footerElement);
+  const descriptionDataUrl = descriptionElement ? await captureElement(descriptionElement) : null;
+  const totalsDataUrl = totalsElement ? await captureElement(totalsElement) : null;
 
-  const [headerImg, contentImg, footerImg] = await Promise.all([
-    loadImage(headerDataUrl),
-    loadImage(contentDataUrl),
-    loadImage(footerDataUrl),
-  ]);
+  const headerImg = await loadImage(headerDataUrl);
+  const footerImg = await loadImage(footerDataUrl);
 
   const pdf = new jsPDF('p', 'mm', 'a4');
   const pageWidth = pdf.internal.pageSize.getWidth();
   const pageHeight = pdf.internal.pageSize.getHeight();
+  const marginX = 10; // margine laterale per il contenuto
 
   const headerHeightMm = (headerImg.height * pageWidth) / headerImg.width;
   const footerHeightMm = (footerImg.height * pageWidth) / footerImg.width;
 
-  const contentTopY = headerHeightMm;
-  // Spazio massimo per contenuto: tra header e footer
-  const maxContentHeightMm = pageHeight - headerHeightMm - footerHeightMm;
+  const contentStartY = headerHeightMm;
+  const contentEndY = pageHeight - footerHeightMm;
 
-  const contentWidthMm = pageWidth;
-  const contentHeightMm = (contentImg.height * pageWidth) / contentImg.width;
-
-  const addHeader = () => {
+  // Funzioni per disegnare header e footer
+  const drawHeader = () => {
     pdf.addImage(headerDataUrl, 'PNG', 0, 0, pageWidth, headerHeightMm);
   };
 
-  const addFooter = (afterContentY: number) => {
-    // Posiziona il footer subito dopo il contenuto, oppure in fondo alla pagina
-    // (quello che viene dopo, per evitare che il footer sovrasti il contenuto)
-    const footerAtBottom = pageHeight - footerHeightMm;
-    const footerAfterContent = afterContentY;
-    const footerY = Math.max(footerAfterContent, footerAtBottom);
-    // Se il footer dopo il contenuto sfora la pagina, mettilo in fondo
-    pdf.addImage(footerDataUrl, 'PNG', 0, Math.min(footerY, footerAtBottom), pageWidth, footerHeightMm);
+  const drawFooter = () => {
+    pdf.addImage(footerDataUrl, 'PNG', 0, pageHeight - footerHeightMm, pageWidth, footerHeightMm);
   };
 
-  // 2) Se il contenuto sta in una pagina, semplice
-  if (contentHeightMm <= maxContentHeightMm) {
-    addHeader();
-    pdf.addImage(contentDataUrl, 'PNG', 0, contentTopY, contentWidthMm, contentHeightMm);
-    addFooter(contentTopY + contentHeightMm);
-    pdf.save(`Preventivo_${subject?.replace(/\s+/g, '_') || 'Documento'}.pdf`);
-    return;
-  }
+  // 2) Prima pagina: header + footer
+  drawHeader();
+  drawFooter();
 
-  // 3) Calcola punti di taglio sicuri dai blocchi [data-pdf-block]
-  const contentRect = contentElement.getBoundingClientRect();
-  const blockElements = contentElement.querySelectorAll<HTMLElement>('[data-pdf-block]');
-  const pxPerMm = contentImg.width / contentWidthMm;
-  const pixelRatio = contentImg.width / contentRect.width;
+  let cursorY = contentStartY;
 
-  const safeBreakPointsPx: number[] = [];
-  for (const el of blockElements) {
-    const elRect = el.getBoundingClientRect();
-    const bottomPx = (elRect.bottom - contentRect.top) * pixelRatio;
-    safeBreakPointsPx.push(bottomPx);
-  }
+  // 3) Descrizione come immagine
+  if (descriptionDataUrl && descriptionElement) {
+    const descImg = await loadImage(descriptionDataUrl);
+    const descWidthMm = pageWidth - marginX * 2;
+    const descHeightMm = (descImg.height * descWidthMm) / descImg.width;
 
-  // 4) Prepara il canvas sorgente
-  const canvas = document.createElement('canvas');
-  canvas.width = contentImg.width;
-  canvas.height = contentImg.height;
-  const ctx = canvas.getContext('2d');
-  if (!ctx) throw new Error('Impossibile creare canvas context');
-  ctx.drawImage(contentImg, 0, 0);
-
-  const maxContentHeightPx = maxContentHeightMm * pxPerMm;
-
-  // 5) Calcola tutte le fette PRIMA di creare le pagine
-  const slices: { srcY: number; height: number }[] = [];
-  let srcY = 0;
-
-  while (srcY < contentImg.height) {
-    const remaining = contentImg.height - srcY;
-
-    // Se il contenuto restante sta nello spazio disponibile, prendilo tutto
-    if (remaining <= maxContentHeightPx) {
-      slices.push({ srcY, height: remaining });
-      break;
+    // Se la descrizione non sta nella pagina corrente, nuova pagina
+    if (cursorY + descHeightMm > contentEndY) {
+      pdf.addPage();
+      drawHeader();
+      drawFooter();
+      cursorY = contentStartY;
     }
 
-    // Trova l'ultimo breakpoint che sta nello spazio disponibile
-    const maxEndPx = srcY + maxContentHeightPx;
-    let bestBreak = -1;
+    pdf.addImage(descriptionDataUrl, 'PNG', marginX, cursorY, descWidthMm, descHeightMm);
+    cursorY += descHeightMm + 4; // 4mm spacing
+  }
 
-    for (let i = safeBreakPointsPx.length - 1; i >= 0; i--) {
-      const bp = safeBreakPointsPx[i]!;
-      if (bp > srcY && bp <= maxEndPx) {
-        bestBreak = bp;
-        break;
+  // 4) Tabella servizi con jspdf-autotable
+  if (services.length > 0) {
+    // Prepara i dati della tabella
+    const tableBody: (string | { content: string; styles: Record<string, unknown> })[][] = [];
+
+    for (const service of services) {
+      // Riga servizio principale
+      tableBody.push([
+        { content: service.description, styles: { fontStyle: 'bold' } },
+        {
+          content: formatEuro(service.cost),
+          styles: { fontStyle: 'bold', halign: 'right' as const },
+        },
+      ]);
+
+      // Sotto-servizi come righe indentate
+      if (service.subservices && service.subservices.length > 0) {
+        for (const sub of service.subservices) {
+          tableBody.push([
+            { content: `  •  ${sub.description}`, styles: { fontStyle: 'normal', fontSize: 9, textColor: [0, 0, 0] } },
+            { content: '', styles: {} },
+          ]);
+        }
       }
     }
 
-    // Se nessun breakpoint trovato, forza il taglio al limite
-    if (bestBreak <= srcY) {
-      bestBreak = Math.min(srcY + maxContentHeightPx, contentImg.height);
-    }
+    autoTable(pdf, {
+      startY: cursorY,
+      margin: { left: marginX, right: marginX, top: contentStartY, bottom: footerHeightMm + 2 },
+      head: [['Servizio', 'Costo']],
+      body: tableBody,
+      theme: 'plain',
+      styles: {
+        fontSize: 10,
+        cellPadding: { top: 2.5, bottom: 2.5, left: 1.5, right: 1.5 },
+        lineColor: [0, 0, 0],
+        lineWidth: 0.2,
+        textColor: [0, 0, 0],
+        overflow: 'linebreak',
+      },
+      headStyles: {
+        fontStyle: 'bold',
+        fontSize: 10,
+        fillColor: [255, 255, 255],
+        textColor: [0, 0, 0],
+        lineWidth: { bottom: 0.5, top: 0, left: 0, right: 0 },
+        lineColor: [0, 0, 0],
+        cellPadding: { top: 2, bottom: 3, left: 1.5, right: 1.5 },
+      },
+      columnStyles: {
+        0: { cellWidth: 'auto' },
+        1: { cellWidth: 40, halign: 'right' },
+      },
+      // Bordi: solo top su ogni riga body, bottom sull'ultima
+      didParseCell: (data) => {
+        if (data.section === 'body') {
+          // Bordo top sottile su ogni riga del body
+          data.cell.styles.lineWidth = { top: 0.15, bottom: 0, left: 0, right: 0 };
+          data.cell.styles.lineColor = [0, 0, 0];
+        }
+      },
+      // Disegna bordo inferiore della tabella e header/footer su ogni pagina
+      didDrawPage: (data) => {
+        // Header e footer su ogni nuova pagina
+        drawHeader();
+        drawFooter();
 
-    slices.push({ srcY, height: bestBreak - srcY });
-    srcY = bestBreak;
+        // Bordo inferiore della tabella (sotto l'ultima riga visibile su questa pagina)
+        if (data.cursor) {
+          const tableLeft = marginX;
+          const tableRight = pageWidth - marginX;
+          pdf.setDrawColor(0, 0, 0);
+          pdf.setLineWidth(0.2);
+          pdf.line(tableLeft, data.cursor.y, tableRight, data.cursor.y);
+        }
+      },
+    });
+
+    // Aggiorna il cursore dopo la tabella
+    // eslint-disable-next-line @typescript-eslint/no-explicit-any
+    cursorY = (pdf as any).lastAutoTable?.finalY ?? cursorY + 20;
   }
 
-  // 6) Crea le pagine
-  for (let pageIdx = 0; pageIdx < slices.length; pageIdx++) {
-    if (pageIdx > 0) {
+  // 5) Totali come immagine
+  if (totalsDataUrl && totalsElement) {
+    const totImg = await loadImage(totalsDataUrl);
+    const totWidthMm = pageWidth - marginX * 2;
+    const totHeightMm = (totImg.height * totWidthMm) / totImg.width;
+
+    // Se i totali non stanno nella pagina corrente, nuova pagina
+    if (cursorY + totHeightMm + 4 > contentEndY) {
       pdf.addPage();
+      drawHeader();
+      drawFooter();
+      cursorY = contentStartY;
     }
 
-    const slice = slices[pageIdx]!;
-    const sliceHeightMm = slice.height / pxPerMm;
-    const isLastPage = pageIdx === slices.length - 1;
-
-    // Header su ogni pagina
-    addHeader();
-
-    // Ritaglia e inserisci la fetta di contenuto
-    const sliceCanvas = document.createElement('canvas');
-    sliceCanvas.width = contentImg.width;
-    sliceCanvas.height = Math.max(1, Math.round(slice.height));
-    const sliceCtx = sliceCanvas.getContext('2d');
-    if (sliceCtx) {
-      sliceCtx.fillStyle = '#ffffff';
-      sliceCtx.fillRect(0, 0, sliceCanvas.width, sliceCanvas.height);
-      sliceCtx.drawImage(
-        canvas,
-        0, slice.srcY, contentImg.width, slice.height,
-        0, 0, contentImg.width, slice.height,
-      );
-      const sliceUrl = sliceCanvas.toDataURL('image/png');
-      pdf.addImage(sliceUrl, 'PNG', 0, contentTopY, contentWidthMm, sliceHeightMm);
-    }
-
-    // Footer: sull'ultima pagina subito dopo il contenuto,
-    // sulle pagine intermedie in fondo alla pagina
-    if (isLastPage) {
-      const footerY = contentTopY + sliceHeightMm;
-      pdf.addImage(footerDataUrl, 'PNG', 0, footerY, pageWidth, footerHeightMm);
-    } else {
-      pdf.addImage(footerDataUrl, 'PNG', 0, pageHeight - footerHeightMm, pageWidth, footerHeightMm);
-    }
+    pdf.addImage(totalsDataUrl, 'PNG', marginX, cursorY + 2, totWidthMm, totHeightMm);
+    cursorY += totHeightMm + 4;
   }
 
   pdf.save(`Preventivo_${subject?.replace(/\s+/g, '_') || 'Documento'}.pdf`);

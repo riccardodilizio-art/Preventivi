@@ -1,3 +1,4 @@
+import type { Ref } from 'react';
 import type { QuoteData } from '@/types/quote';
 import type { Calculations } from '@/hooks/useQuoteCalculations';
 import { ServiceRow } from './ServiceRow';
@@ -6,28 +7,30 @@ import { TotalsSummary } from './TotalsSummary';
 interface QuoteContentProps {
   data: QuoteData;
   calculations: Calculations;
+  descriptionRef: Ref<HTMLDivElement>;
+  totalsRef: Ref<HTMLDivElement>;
 }
 
-export function QuoteContent({ data, calculations }: QuoteContentProps) {
+export function QuoteContent({ data, calculations, descriptionRef, totalsRef }: QuoteContentProps) {
   return (
     <div className="px-10">
-      {/* Blocco: descrizione */}
-      <div data-pdf-block className="my-6 rich-text-content">
+      {/* Descrizione */}
+      <div ref={descriptionRef} className="my-6 rich-text-content">
         <div dangerouslySetInnerHTML={{ __html: data.serviceDescription }} />
       </div>
 
       {data.services.length > 0 && (
         <div className="my-8">
-          {/* Blocco: intestazione tabella */}
-          <div data-pdf-block className="flex justify-between text-sm font-medium text-black border-b-2 border-black pb-2">
+          {/* Intestazione tabella */}
+          <div className="flex justify-between text-sm font-medium text-black border-b-2 border-black pb-2">
             <p>Servizio</p>
             <p className="w-40 text-right">Costo</p>
           </div>
 
-          {/* Blocco: ogni riga servizio */}
+          {/* Righe servizi */}
           <div className="border-b border-black">
             {data.services.map((service, index) => (
-              <div key={index} data-pdf-block>
+              <div key={index}>
                 <ServiceRow service={service} />
               </div>
             ))}
@@ -35,8 +38,8 @@ export function QuoteContent({ data, calculations }: QuoteContentProps) {
         </div>
       )}
 
-      {/* Blocco: totali */}
-      <div data-pdf-block>
+      {/* Totali */}
+      <div ref={totalsRef}>
         <TotalsSummary calculations={calculations} />
       </div>
     </div>

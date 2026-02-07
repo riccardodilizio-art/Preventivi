@@ -16,13 +16,14 @@ export function QuotePreview({ data, onBack }: QuotePreviewProps) {
   const [isGenerating, setIsGenerating] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const headerRef = useRef<HTMLDivElement>(null);
-  const contentRef = useRef<HTMLDivElement>(null);
   const footerRef = useRef<HTMLDivElement>(null);
+  const descriptionRef = useRef<HTMLDivElement>(null);
+  const totalsRef = useRef<HTMLDivElement>(null);
 
   const calculations = useQuoteCalculations(data.services);
 
   const handleDownloadPdf = useCallback(async () => {
-    if (!headerRef.current || !contentRef.current || !footerRef.current) {
+    if (!headerRef.current || !footerRef.current) {
       setError('Elementi non pronti per la generazione del PDF.');
       return;
     }
@@ -34,8 +35,11 @@ export function QuotePreview({ data, onBack }: QuotePreviewProps) {
       await generateQuotePdf({
         subject: data.subject,
         headerElement: headerRef.current,
-        contentElement: contentRef.current,
         footerElement: footerRef.current,
+        descriptionElement: descriptionRef.current,
+        totalsElement: totalsRef.current,
+        services: data.services,
+        calculations,
       });
     } catch (err) {
       console.error('Errore generazione PDF:', err);
@@ -43,7 +47,7 @@ export function QuotePreview({ data, onBack }: QuotePreviewProps) {
     } finally {
       setIsGenerating(false);
     }
-  }, [data.subject]);
+  }, [data.subject, data.services, calculations]);
 
   return (
     <div className="min-h-screen bg-gray-100">
@@ -67,9 +71,12 @@ export function QuotePreview({ data, onBack }: QuotePreviewProps) {
             <QuoteHeader data={data} />
           </div>
 
-          <div ref={contentRef}>
-            <QuoteContent data={data} calculations={calculations} />
-          </div>
+          <QuoteContent
+            data={data}
+            calculations={calculations}
+            descriptionRef={descriptionRef}
+            totalsRef={totalsRef}
+          />
 
           <div ref={footerRef}>
             <QuoteFooter data={data} />
