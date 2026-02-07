@@ -19,16 +19,40 @@ const captureElement = async (element: HTMLElement): Promise<string> => {
         onclone: (_doc, clonedEl) => {
             const root = clonedEl as HTMLElement;
 
+            // Rimuovi tutte le custom properties oklch dal :root clonato
+            // per evitare che html2canvas tenti di parsare oklch()
+            const rootStyle = _doc.documentElement.style;
+            const rootComputed = _doc.documentElement;
+            for (const sheet of Array.from(_doc.styleSheets)) {
+              try {
+                for (const rule of Array.from(sheet.cssRules)) {
+                  if (rule instanceof CSSStyleRule && rule.selectorText === ':root') {
+                    for (let i = rule.style.length - 1; i >= 0; i--) {
+                      const prop = rule.style.item(i);
+                      const val = rule.style.getPropertyValue(prop);
+                      if (val.includes('oklch')) {
+                        rule.style.removeProperty(prop);
+                      }
+                    }
+                  }
+                }
+              } catch { /* cross-origin sheets, skip */ }
+            }
+
+            // Forza colori safe (rgb) sul root
             root.style.setProperty('color', '#000', 'important');
             root.style.setProperty('background', '#fff', 'important');
             root.style.setProperty('background-color', '#fff', 'important');
 
-            root.querySelectorAll<HTMLElement>('*').forEach((el) => {
+            // Converte computed style di ogni elemento in valori rgb safe
+            const allElements = root.querySelectorAll<HTMLElement>('*');
+            allElements.forEach((el) => {
+                // getComputedStyle sul documento ORIGINALE per avere valori rgb
+                // (il browser converte oklch → rgb automaticamente nel computed)
                 const computed = window.getComputedStyle(el);
-                const bgColor = computed.backgroundColor;
 
-                // Preserva background grigi/colorati (es. box OGGETTO),
-                // rende trasparenti solo quelli bianchi o senza bg
+                // Background: preserva grigi/colorati, rimuovi bianchi
+                const bgColor = computed.backgroundColor;
                 const isWhiteOrTransparent =
                   !bgColor ||
                   bgColor === 'transparent' ||
@@ -37,18 +61,26 @@ const captureElement = async (element: HTMLElement): Promise<string> => {
 
                 if (isWhiteOrTransparent) {
                   el.style.setProperty('background-color', 'transparent', 'important');
+                } else if (bgColor.startsWith('rgb')) {
+                  // Forza il valore rgb esplicito (no oklch)
+                  el.style.setProperty('background-color', bgColor, 'important');
+                } else {
+                  el.style.setProperty('background-color', 'transparent', 'important');
                 }
 
-                // Preserva i grigi intenzionali (es. text-gray-600 per firma)
+                // Testo: preserva grigi, forza nero per il resto
                 const textColor = computed.color;
                 const isGray = textColor.startsWith('rgb(') &&
-                  !textColor.includes('255, 255, 255') &&
-                  textColor !== 'rgb(0, 0, 0)';
+                  textColor !== 'rgb(0, 0, 0)' &&
+                  textColor !== 'rgb(255, 255, 255)';
 
-                if (!isGray) {
+                if (isGray) {
+                  el.style.setProperty('color', textColor, 'important');
+                } else {
                   el.style.setProperty('color', '#000', 'important');
                 }
 
+                // Bordi: forza nero con rgb
                 el.style.setProperty('border-color', '#000', 'important');
                 el.style.setProperty('filter', 'none', 'important');
                 el.style.setProperty('text-shadow', 'none', 'important');
