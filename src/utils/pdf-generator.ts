@@ -78,29 +78,53 @@ export async function generateQuotePdf({
     pdf.addImage(footerDataUrl, 'PNG', 0, footerY, pageWidth, footerHeightMm);
   };
 
-  // 2) Spezza il contenuto su più pagine
-  // Pagina 1: header completo + contenuto + footer
-  // Pagine 2+: solo contenuto (con margine top) + footer
+  // 2) Calcola quante pagine servono prima di disegnare
+  // Header su tutte le pagine, footer (firma/data) solo sull'ultima
   const pxPerMm = contentImg.height / contentHeightMm;
-  let remainingMm = contentHeightMm;
-  let offsetMm = 0;
-  let pageNum = 0;
 
-  while (remainingMm > 0) {
-    if (pageNum > 0) {
+  // Pre-calcola le fette per sapere il numero totale di pagine
+  const slices: { offsetMm: number; sliceMm: number; startY: number }[] = [];
+  {
+    let remaining = contentHeightMm;
+    let offset = 0;
+    let page = 0;
+    while (remaining > 0) {
+      const startY = headerHeightMm; // header su tutte le pagine
+      // Sull'ultima fetta lasciamo spazio per il footer
+      // Per capire se è l'ultima, verifichiamo se il contenuto rimanente entra
+      const availableWithoutFooter = pageHeight - startY;
+      const availableWithFooter = footerY - startY;
+
+      // Se il contenuto rimanente entra con il footer, è l'ultima pagina
+      const isLastPage = remaining <= availableWithFooter;
+      const available = isLastPage ? availableWithFooter : availableWithoutFooter;
+
+      const slice = Math.min(remaining, available);
+      slices.push({ offsetMm: offset, sliceMm: slice, startY });
+      offset += slice;
+      remaining -= slice;
+      page++;
+    }
+  }
+
+  const totalPages = slices.length;
+
+  // 3) Disegna ogni pagina
+  for (let i = 0; i < totalPages; i++) {
+    if (i > 0) {
       pdf.addPage();
     }
 
-    // Header completo solo sulla prima pagina
-    const pageStartY = pageNum === 0 ? headerHeightMm : topMargin;
+    const { offsetMm, sliceMm, startY } = slices[i];
+    const isLastPage = i === totalPages - 1;
 
-    if (pageNum === 0) {
-      drawHeader();
+    // Header su tutte le pagine
+    drawHeader();
+
+    // Footer solo sull'ultima pagina
+    if (isLastPage) {
+      drawFooter();
     }
-    drawFooter();
-
-    const availableOnPage = footerY - pageStartY;
-    const sliceMm = Math.min(remainingMm, availableOnPage);
 
     // Coordinate sorgente in pixel
     const srcY = offsetMm * pxPerMm;
@@ -119,11 +143,7 @@ export async function generateQuotePdf({
     );
 
     const sliceDataUrl = sliceCanvas.toDataURL('image/png');
-    pdf.addImage(sliceDataUrl, 'PNG', 0, pageStartY, pageWidth, sliceMm);
-
-    offsetMm += sliceMm;
-    remainingMm -= sliceMm;
-    pageNum++;
+    pdf.addImage(sliceDataUrl, 'PNG', 0, startY, pageWidth, sliceMm);
   }
 
   pdf.save(`Preventivo_${subject?.replace(/\s+/g, '_') || 'Documento'}.pdf`);
