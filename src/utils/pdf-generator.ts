@@ -110,15 +110,7 @@ export async function generateQuotePdf({
         for (const sub of service.subservices) {
           subserviceRows.add(rowIdx);
           tableBody.push([
-            {
-              content: sub.description,
-              styles: {
-                fontStyle: 'normal',
-                fontSize: 9,
-                textColor: [0, 0, 0],
-                cellPadding: { top: 2, bottom: 2, left: 10, right: 1.5 },
-              },
-            },
+            { content: sub.description, styles: { fontStyle: 'normal', fontSize: 9, textColor: [0, 0, 0] } },
             { content: '', styles: {} },
           ]);
           rowIdx++;
@@ -163,6 +155,11 @@ export async function generateQuotePdf({
             right: 0,
           };
           data.cell.styles.lineColor = [0, 0, 0];
+
+          // Sotto-servizi: indentazione left per allineare il testo dopo il bullet
+          if (subserviceRows.has(data.row.index) && data.column.index === 0) {
+            data.cell.styles.cellPadding = { top: 2, bottom: 2, left: 10, right: 1.5 };
+          }
         }
       },
       didDrawCell: (data) => {
