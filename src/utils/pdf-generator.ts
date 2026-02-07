@@ -7,12 +7,16 @@ import { formatEuro } from '@/utils/formatting';
 import type { ServiceItem } from '@/types/quote';
 import type { Calculations } from '@/hooks/useQuoteCalculations';
 
-const captureElement = (element: HTMLElement): Promise<string> =>
-  toPng(element, {
+const captureElement = (element: HTMLElement): Promise<string> => {
+  const rect = element.getBoundingClientRect();
+  return toPng(element, {
     cacheBust: true,
     pixelRatio: PDF_CONFIG.PIXEL_RATIO,
     backgroundColor: PDF_CONFIG.BACKGROUND_COLOR,
+    width: rect.width,
+    height: rect.height,
   });
+};
 
 interface GeneratePdfParams {
   subject: string;
