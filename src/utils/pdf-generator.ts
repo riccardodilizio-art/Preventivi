@@ -24,8 +24,31 @@ const captureElement = async (element: HTMLElement): Promise<string> => {
             root.style.setProperty('background-color', '#fff', 'important');
 
             root.querySelectorAll<HTMLElement>('*').forEach((el) => {
-                el.style.setProperty('color', '#000', 'important');
-                el.style.setProperty('background-color', 'transparent', 'important');
+                const computed = window.getComputedStyle(el);
+                const bgColor = computed.backgroundColor;
+
+                // Preserva background grigi/colorati (es. box OGGETTO),
+                // rende trasparenti solo quelli bianchi o senza bg
+                const isWhiteOrTransparent =
+                  !bgColor ||
+                  bgColor === 'transparent' ||
+                  bgColor === 'rgba(0, 0, 0, 0)' ||
+                  bgColor === 'rgb(255, 255, 255)';
+
+                if (isWhiteOrTransparent) {
+                  el.style.setProperty('background-color', 'transparent', 'important');
+                }
+
+                // Preserva i grigi intenzionali (es. text-gray-600 per firma)
+                const textColor = computed.color;
+                const isGray = textColor.startsWith('rgb(') &&
+                  !textColor.includes('255, 255, 255') &&
+                  textColor !== 'rgb(0, 0, 0)';
+
+                if (!isGray) {
+                  el.style.setProperty('color', '#000', 'important');
+                }
+
                 el.style.setProperty('border-color', '#000', 'important');
                 el.style.setProperty('filter', 'none', 'important');
                 el.style.setProperty('text-shadow', 'none', 'important');
@@ -112,17 +135,15 @@ export async function generateQuotePdf({
   const footerHeightMm = (footerImg.height * pageWidth) / footerImg.width;
   const contentHeightMm = (contentImg.height * pageWidth) / contentImg.width;
   const footerY = pageHeight - footerHeightMm;
+  const bottomMargin = 8; // margine inferiore su pagine intermedie
 
-  // Rapporto px (DOM reali, non canvas) → mm
+  // Rapporto px DOM → mm e viceversa
   const contentDomHeight = contentElement.scrollHeight;
   const pxToMm = contentHeightMm / contentDomHeight;
   const mmToPx = contentDomHeight / contentHeightMm;
 
   // Rapporto px canvas → mm (per il taglio dell'immagine)
   const canvasPxPerMm = contentImg.height / contentHeightMm;
-
-  // Converti breakpoint da px DOM a mm
-  const breakpointsMm = breakpointsPx.map((bp) => bp * pxToMm);
 
   const drawHeader = () => {
     pdf.addImage(headerDataUrl, 'PNG', 0, 0, pageWidth, headerHeightMm);
@@ -142,32 +163,30 @@ export async function generateQuotePdf({
       const startY = headerHeightMm;
       const remaining = totalMm - offsetMm;
 
-      // Controlla se il contenuto rimanente entra con il footer (ultima pagina)
+      // Spazio con footer (ultima pagina)
       const availableWithFooter = footerY - startY;
       if (remaining <= availableWithFooter) {
-        // Ultima pagina: tutto il contenuto rimanente
         slices.push({ offsetMm, sliceMm: remaining });
         break;
       }
 
-      // Pagina intermedia: usa tutto lo spazio senza footer
-      const availableWithoutFooter = pageHeight - startY;
-      const maxCutMm = offsetMm + availableWithoutFooter;
+      // Pagina intermedia: spazio senza footer, con margine inferiore per respiro
+      const availableIntermediate = pageHeight - startY - bottomMargin;
 
-      // Trova il breakpoint sicuro più vicino (in mm)
+      // Trova il breakpoint sicuro più vicino
       const offsetPx = offsetMm * mmToPx;
-      const maxPx = availableWithoutFooter * mmToPx;
+      const maxPx = availableIntermediate * mmToPx;
       const safeCutPx = findSafeBreak(breakpointsPx, maxPx, offsetPx);
       const safeCutMm = safeCutPx * pxToMm;
 
-      // Usa il taglio sicuro, ma non superare lo spazio disponibile
-      const actualCutMm = Math.min(safeCutMm, maxCutMm);
+      // Usa il taglio sicuro, senza superare lo spazio disponibile
+      const actualCutMm = Math.min(safeCutMm, offsetMm + availableIntermediate);
       const sliceMm = actualCutMm - offsetMm;
 
       if (sliceMm <= 0) {
-        // Fallback: se il blocco è più grande della pagina, taglia comunque
-        slices.push({ offsetMm, sliceMm: availableWithoutFooter });
-        offsetMm += availableWithoutFooter;
+        // Fallback: blocco più grande della pagina, taglia comunque
+        slices.push({ offsetMm, sliceMm: availableIntermediate });
+        offsetMm += availableIntermediate;
       } else {
         slices.push({ offsetMm, sliceMm });
         offsetMm += sliceMm;
@@ -187,10 +206,7 @@ export async function generateQuotePdf({
     const isLastPage = i === totalPages - 1;
     const startY = headerHeightMm;
 
-    // Header su tutte le pagine
     drawHeader();
-
-    // Footer solo sull'ultima pagina
     if (isLastPage) {
       drawFooter();
     }
@@ -199,7 +215,7 @@ export async function generateQuotePdf({
     const srcY = offsetMm * canvasPxPerMm;
     const srcH = sliceMm * canvasPxPerMm;
 
-    // Canvas con solo la porzione necessaria
+    // Canvas temporaneo per la porzione
     const sliceCanvas = document.createElement('canvas');
     sliceCanvas.width = contentImg.width;
     sliceCanvas.height = Math.max(1, Math.round(srcH));
@@ -213,6 +229,10 @@ export async function generateQuotePdf({
 
     const sliceDataUrl = sliceCanvas.toDataURL('image/png');
     pdf.addImage(sliceDataUrl, 'PNG', 0, startY, pageWidth, sliceMm);
+
+    // Cleanup canvas temporaneo
+    sliceCanvas.width = 0;
+    sliceCanvas.height = 0;
   }
 
   pdf.save(`Preventivo_${subject?.replace(/\s+/g, '_') || 'Documento'}.pdf`);
