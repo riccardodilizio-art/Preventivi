@@ -35,6 +35,11 @@
 }
 
 /* Rich text content rendering */
+.rich-text-content {
+  word-break: break-word;
+  overflow-wrap: break-word;
+}
+
 .rich-text-content ul,
 .rich-text-content ol {
   padding-left: 1.5em;

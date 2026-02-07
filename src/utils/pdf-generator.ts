@@ -7,35 +7,12 @@ import { formatEuro } from '@/utils/formatting';
 import type { ServiceItem } from '@/types/quote';
 import type { Calculations } from '@/hooks/useQuoteCalculations';
 
-const captureElement = async (element: HTMLElement, constrainWidth = false): Promise<string> => {
-  // Se constrainWidth, forza la larghezza inline sull'elemento così il clone
-  // di html-to-image rispetta il word-wrap (il clone non ha il contesto del padre)
-  const prevWidth = element.style.width;
-  const prevWordWrap = element.style.wordWrap;
-  const prevOverflowWrap = element.style.overflowWrap;
-
-  if (constrainWidth) {
-    const computedWidth = element.getBoundingClientRect().width;
-    element.style.width = `${computedWidth}px`;
-    element.style.wordWrap = 'break-word';
-    element.style.overflowWrap = 'break-word';
-  }
-
-  const dataUrl = await toPng(element, {
+const captureElement = (element: HTMLElement): Promise<string> =>
+  toPng(element, {
     cacheBust: true,
     pixelRatio: PDF_CONFIG.PIXEL_RATIO,
     backgroundColor: PDF_CONFIG.BACKGROUND_COLOR,
   });
-
-  // Ripristina stili originali
-  if (constrainWidth) {
-    element.style.width = prevWidth;
-    element.style.wordWrap = prevWordWrap;
-    element.style.overflowWrap = prevOverflowWrap;
-  }
-
-  return dataUrl;
-};
 
 interface GeneratePdfParams {
   subject: string;
@@ -59,12 +36,11 @@ export async function generateQuotePdf({
   // 1) Cattura immagini di header, footer, descrizione e totali
   const headerDataUrl = await captureElement(headerElement);
   const footerDataUrl = await captureElement(footerElement);
-  // Forza la larghezza sulla descrizione e totali così il clone mantiene il word-wrap
   const descriptionDataUrl = descriptionElement
-    ? await captureElement(descriptionElement, true)
+    ? await captureElement(descriptionElement)
     : null;
   const totalsDataUrl = totalsElement
-    ? await captureElement(totalsElement, true)
+    ? await captureElement(totalsElement)
     : null;
 
   const headerImg = await loadImage(headerDataUrl);
@@ -96,11 +72,10 @@ export async function generateQuotePdf({
 
   let cursorY = contentStartY;
 
-  // 3) Descrizione come immagine
+  // 3) Descrizione come immagine (ha il proprio px-10 quindi usa pageWidth)
   if (descriptionDataUrl && descriptionElement) {
     const descImg = await loadImage(descriptionDataUrl);
-    const descWidthMm = pageWidth - marginX * 2;
-    const descHeightMm = (descImg.height * descWidthMm) / descImg.width;
+    const descHeightMm = (descImg.height * pageWidth) / descImg.width;
 
     // Se la descrizione non sta nella pagina corrente, nuova pagina
     if (cursorY + descHeightMm > contentEndY) {
@@ -110,7 +85,7 @@ export async function generateQuotePdf({
       cursorY = contentStartY;
     }
 
-    pdf.addImage(descriptionDataUrl, 'PNG', marginX, cursorY, descWidthMm, descHeightMm);
+    pdf.addImage(descriptionDataUrl, 'PNG', 0, cursorY, pageWidth, descHeightMm);
     cursorY += descHeightMm + 4; // 4mm spacing
   }
 
