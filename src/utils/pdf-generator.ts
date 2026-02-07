@@ -62,26 +62,26 @@ export async function generateQuotePdf({
   const pageWidth = pdf.internal.pageSize.getWidth();
   const pageHeight = pdf.internal.pageSize.getHeight();
 
-  // Calcola altezze in mm proporzionali alla larghezza della pagina
+  // Altezze in mm proporzionali alla larghezza della pagina
   const headerHeightMm = (headerImg.height * pageWidth) / headerImg.width;
   const footerHeightMm = (footerImg.height * pageWidth) / footerImg.width;
   const contentHeightMm = (contentImg.height * pageWidth) / contentImg.width;
 
-  const contentStartY = headerHeightMm;
-  const contentEndY = pageHeight - footerHeightMm;
-  const availablePerPage = contentEndY - contentStartY;
+  const topMargin = 10; // margine superiore pagine di continuazione
+  const footerY = pageHeight - footerHeightMm;
 
   const drawHeader = () => {
     pdf.addImage(headerDataUrl, 'PNG', 0, 0, pageWidth, headerHeightMm);
   };
 
   const drawFooter = () => {
-    pdf.addImage(footerDataUrl, 'PNG', 0, pageHeight - footerHeightMm, pageWidth, footerHeightMm);
+    pdf.addImage(footerDataUrl, 'PNG', 0, footerY, pageWidth, footerHeightMm);
   };
 
   // 2) Spezza il contenuto su più pagine
-  // Ogni pagina ha header in cima e footer in fondo
-  // Il contenuto viene tagliato a fette verticali
+  // Pagina 1: header completo + contenuto + footer
+  // Pagine 2+: solo contenuto (con margine top) + footer
+  const pxPerMm = contentImg.height / contentHeightMm;
   let remainingMm = contentHeightMm;
   let offsetMm = 0;
   let pageNum = 0;
@@ -91,17 +91,22 @@ export async function generateQuotePdf({
       pdf.addPage();
     }
 
-    drawHeader();
+    // Header completo solo sulla prima pagina
+    const pageStartY = pageNum === 0 ? headerHeightMm : topMargin;
+
+    if (pageNum === 0) {
+      drawHeader();
+    }
     drawFooter();
 
-    const sliceMm = Math.min(remainingMm, availablePerPage);
+    const availableOnPage = footerY - pageStartY;
+    const sliceMm = Math.min(remainingMm, availableOnPage);
 
-    // Calcola coordinate sorgente in pixel
-    const pxPerMm = contentImg.height / contentHeightMm;
+    // Coordinate sorgente in pixel
     const srcY = offsetMm * pxPerMm;
     const srcH = sliceMm * pxPerMm;
 
-    // Crea canvas con solo la porzione necessaria
+    // Canvas con solo la porzione necessaria
     const sliceCanvas = document.createElement('canvas');
     sliceCanvas.width = contentImg.width;
     sliceCanvas.height = Math.max(1, Math.round(srcH));
@@ -114,7 +119,7 @@ export async function generateQuotePdf({
     );
 
     const sliceDataUrl = sliceCanvas.toDataURL('image/png');
-    pdf.addImage(sliceDataUrl, 'PNG', 0, contentStartY, pageWidth, sliceMm);
+    pdf.addImage(sliceDataUrl, 'PNG', 0, pageStartY, pageWidth, sliceMm);
 
     offsetMm += sliceMm;
     remainingMm -= sliceMm;
