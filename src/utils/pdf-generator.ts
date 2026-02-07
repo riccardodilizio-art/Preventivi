@@ -40,47 +40,36 @@ interface GeneratePdfParams {
   subject: string;
   headerElement: HTMLElement;
   footerElement: HTMLElement;
-  descriptionElement: HTMLElement | null;
-  servicesElement: HTMLElement | null;
-  totalsElement: HTMLElement | null;
+  contentElement: HTMLElement;
 }
 
 export async function generateQuotePdf({
   subject,
   headerElement,
   footerElement,
-  descriptionElement,
-  servicesElement,
-  totalsElement,
+  contentElement,
 }: GeneratePdfParams): Promise<void> {
-  // 1) Cattura immagini di tutti gli elementi
+  // 1) Cattura immagini
   const headerDataUrl = await captureElement(headerElement);
   const footerDataUrl = await captureElement(footerElement);
-  const descriptionDataUrl = descriptionElement
-    ? await captureElement(descriptionElement)
-    : null;
-  const servicesDataUrl = servicesElement
-    ? await captureElement(servicesElement)
-    : null;
-  const totalsDataUrl = totalsElement
-    ? await captureElement(totalsElement)
-    : null;
+  const contentDataUrl = await captureElement(contentElement);
 
   const headerImg = await loadImage(headerDataUrl);
   const footerImg = await loadImage(footerDataUrl);
+  const contentImg = await loadImage(contentDataUrl);
 
   const pdf = new jsPDF('p', 'mm', 'a4');
   const pageWidth = pdf.internal.pageSize.getWidth();
   const pageHeight = pdf.internal.pageSize.getHeight();
-  const marginX = 10;
-  const contentWidth = pageWidth - marginX * 2;
 
+  // Calcola altezze in mm proporzionali alla larghezza della pagina
   const headerHeightMm = (headerImg.height * pageWidth) / headerImg.width;
   const footerHeightMm = (footerImg.height * pageWidth) / footerImg.width;
+  const contentHeightMm = (contentImg.height * pageWidth) / contentImg.width;
 
   const contentStartY = headerHeightMm;
   const contentEndY = pageHeight - footerHeightMm;
-  const availableHeight = contentEndY - contentStartY;
+  const availablePerPage = contentEndY - contentStartY;
 
   const drawHeader = () => {
     pdf.addImage(headerDataUrl, 'PNG', 0, 0, pageWidth, headerHeightMm);
@@ -90,111 +79,46 @@ export async function generateQuotePdf({
     pdf.addImage(footerDataUrl, 'PNG', 0, pageHeight - footerHeightMm, pageWidth, footerHeightMm);
   };
 
-  // Funzione per piazzare un'immagine con gestione automatica di page-break
-  // Se l'immagine è più alta dello spazio disponibile, la spezza su più pagine
-  const placeImage = (
-    dataUrl: string,
-    imgWidth: number,
-    imgHeight: number,
-    targetWidthMm: number,
-    xOffset: number,
-    cursor: number,
-  ): number => {
-    const targetHeightMm = (imgHeight * targetWidthMm) / imgWidth;
+  // 2) Spezza il contenuto su più pagine
+  // Ogni pagina ha header in cima e footer in fondo
+  // Il contenuto viene tagliato a fette verticali
+  let remainingMm = contentHeightMm;
+  let offsetMm = 0;
+  let pageNum = 0;
 
-    // Se entra nella pagina corrente, piazzala normalmente
-    if (cursor + targetHeightMm <= contentEndY) {
-      pdf.addImage(dataUrl, 'PNG', xOffset, cursor, targetWidthMm, targetHeightMm);
-      return cursor + targetHeightMm;
-    }
-
-    // Se è più piccola dello spazio disponibile su una pagina intera, vai a pagina nuova
-    if (targetHeightMm <= availableHeight) {
+  while (remainingMm > 0) {
+    if (pageNum > 0) {
       pdf.addPage();
-      drawHeader();
-      drawFooter();
-      pdf.addImage(dataUrl, 'PNG', xOffset, contentStartY, targetWidthMm, targetHeightMm);
-      return contentStartY + targetHeightMm;
     }
 
-    // Se è più grande di una pagina, spezzala su più pagine usando clipping
-    let remainingHeight = targetHeightMm;
-    let sourceYOffset = 0;
-    let currentCursor = cursor;
+    drawHeader();
+    drawFooter();
 
-    while (remainingHeight > 0) {
-      const spaceOnPage = contentEndY - currentCursor;
+    const sliceMm = Math.min(remainingMm, availablePerPage);
 
-      if (spaceOnPage <= 0) {
-        pdf.addPage();
-        drawHeader();
-        drawFooter();
-        currentCursor = contentStartY;
-        continue;
-      }
+    // Calcola coordinate sorgente in pixel
+    const pxPerMm = contentImg.height / contentHeightMm;
+    const srcY = offsetMm * pxPerMm;
+    const srcH = sliceMm * pxPerMm;
 
-      const sliceHeight = Math.min(remainingHeight, spaceOnPage);
+    // Crea canvas con solo la porzione necessaria
+    const sliceCanvas = document.createElement('canvas');
+    sliceCanvas.width = contentImg.width;
+    sliceCanvas.height = Math.max(1, Math.round(srcH));
+    const ctx = sliceCanvas.getContext('2d')!;
 
-      // Calcola la porzione sorgente in pixel
-      const scaleY = imgHeight / targetHeightMm;
-      const srcY = sourceYOffset * scaleY;
-      const srcH = sliceHeight * scaleY;
+    ctx.drawImage(
+      contentImg,
+      0, srcY, contentImg.width, srcH,
+      0, 0, contentImg.width, Math.round(srcH),
+    );
 
-      // Crea un canvas temporaneo per la porzione
-      const tempCanvas = document.createElement('canvas');
-      tempCanvas.width = imgWidth;
-      tempCanvas.height = Math.ceil(srcH);
-      const ctx = tempCanvas.getContext('2d')!;
+    const sliceDataUrl = sliceCanvas.toDataURL('image/png');
+    pdf.addImage(sliceDataUrl, 'PNG', 0, contentStartY, pageWidth, sliceMm);
 
-      const img = new Image();
-      img.src = dataUrl;
-
-      // Disegna solo la porzione necessaria
-      ctx.drawImage(img, 0, srcY, imgWidth, srcH, 0, 0, imgWidth, Math.ceil(srcH));
-
-      const sliceDataUrl = tempCanvas.toDataURL('image/png');
-      pdf.addImage(sliceDataUrl, 'PNG', xOffset, currentCursor, targetWidthMm, sliceHeight);
-
-      sourceYOffset += sliceHeight;
-      remainingHeight -= sliceHeight;
-      currentCursor += sliceHeight;
-
-      if (remainingHeight > 0) {
-        pdf.addPage();
-        drawHeader();
-        drawFooter();
-        currentCursor = contentStartY;
-      }
-    }
-
-    return currentCursor;
-  };
-
-  // 2) Prima pagina: header + footer
-  drawHeader();
-  drawFooter();
-
-  let cursorY = contentStartY;
-
-  // 3) Descrizione come immagine (full width, ha px-10 interno)
-  if (descriptionDataUrl && descriptionElement) {
-    const descImg = await loadImage(descriptionDataUrl);
-    cursorY = placeImage(descriptionDataUrl, descImg.width, descImg.height, pageWidth, 0, cursorY);
-    cursorY += 2;
-  }
-
-  // 4) Tabella servizi come immagine
-  if (servicesDataUrl && servicesElement) {
-    const svcImg = await loadImage(servicesDataUrl);
-    // La tabella ha px-10 dal contenitore padre, quindi usiamo contentWidth con marginX
-    cursorY = placeImage(servicesDataUrl, svcImg.width, svcImg.height, contentWidth, marginX, cursorY);
-    cursorY += 4;
-  }
-
-  // 5) Totali come immagine
-  if (totalsDataUrl && totalsElement) {
-    const totImg = await loadImage(totalsDataUrl);
-    cursorY = placeImage(totalsDataUrl, totImg.width, totImg.height, contentWidth, marginX, cursorY);
+    offsetMm += sliceMm;
+    remainingMm -= sliceMm;
+    pageNum++;
   }
 
   pdf.save(`Preventivo_${subject?.replace(/\s+/g, '_') || 'Documento'}.pdf`);

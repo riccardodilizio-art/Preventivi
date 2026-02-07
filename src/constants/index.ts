@@ -1,5 +1,5 @@
 export const PDF_CONFIG = {
-  PIXEL_RATIO: 2.5,
+  PIXEL_RATIO: 4,
   BACKGROUND_COLOR: '#ffffff',
   PAGE_MARGIN: 15,
   HEADER_HEIGHT: 60,
