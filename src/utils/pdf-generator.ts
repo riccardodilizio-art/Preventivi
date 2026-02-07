@@ -36,6 +36,48 @@ const captureElement = async (element: HTMLElement): Promise<string> => {
     return canvas.toDataURL('image/png');
 };
 
+/**
+ * Legge le posizioni Y (in px) dei bordi inferiori di ogni [data-pdf-block]
+ * relative al contentElement. Questi sono i punti "sicuri" dove tagliare.
+ */
+function getBlockBreakpoints(contentElement: HTMLElement): number[] {
+  const blocks = contentElement.querySelectorAll<HTMLElement>('[data-pdf-block]');
+  const containerTop = contentElement.getBoundingClientRect().top;
+  const breakpoints: number[] = [];
+
+  blocks.forEach((block) => {
+    const rect = block.getBoundingClientRect();
+    const bottomPx = rect.bottom - containerTop;
+    breakpoints.push(bottomPx);
+  });
+
+  return breakpoints;
+}
+
+/**
+ * Dato un limite massimo in px, trova il breakpoint sicuro più vicino
+ * che non supera quel limite. Se nessun breakpoint entra, usa il limite grezzo.
+ */
+function findSafeBreak(breakpointsPx: number[], maxPx: number, offsetPx: number): number {
+  let bestBreak = offsetPx; // fallback: nessun contenuto (non dovrebbe succedere)
+
+  for (const bp of breakpointsPx) {
+    if (bp <= offsetPx) continue; // già passato
+    if (bp - offsetPx <= maxPx) {
+      bestBreak = bp; // questo blocco entra, aggiorna il miglior taglio
+    } else {
+      break; // il prossimo non entra, fermati
+    }
+  }
+
+  // Se nessun breakpoint valido trovato, usa il taglio grezzo (fallback sicuro)
+  if (bestBreak <= offsetPx) {
+    return offsetPx + maxPx;
+  }
+
+  return bestBreak;
+}
+
 interface GeneratePdfParams {
   subject: string;
   headerElement: HTMLElement;
@@ -49,7 +91,10 @@ export async function generateQuotePdf({
   footerElement,
   contentElement,
 }: GeneratePdfParams): Promise<void> {
-  // 1) Cattura immagini
+  // 1) Leggi i breakpoint PRIMA della cattura (servono le posizioni DOM reali)
+  const breakpointsPx = getBlockBreakpoints(contentElement);
+
+  // 2) Cattura immagini
   const headerDataUrl = await captureElement(headerElement);
   const footerDataUrl = await captureElement(footerElement);
   const contentDataUrl = await captureElement(contentElement);
@@ -62,13 +107,22 @@ export async function generateQuotePdf({
   const pageWidth = pdf.internal.pageSize.getWidth();
   const pageHeight = pdf.internal.pageSize.getHeight();
 
-  // Altezze in mm proporzionali alla larghezza della pagina
+  // Altezze in mm
   const headerHeightMm = (headerImg.height * pageWidth) / headerImg.width;
   const footerHeightMm = (footerImg.height * pageWidth) / footerImg.width;
   const contentHeightMm = (contentImg.height * pageWidth) / contentImg.width;
-
-  const topMargin = 10; // margine superiore pagine di continuazione
   const footerY = pageHeight - footerHeightMm;
+
+  // Rapporto px (DOM reali, non canvas) → mm
+  const contentDomHeight = contentElement.scrollHeight;
+  const pxToMm = contentHeightMm / contentDomHeight;
+  const mmToPx = contentDomHeight / contentHeightMm;
+
+  // Rapporto px canvas → mm (per il taglio dell'immagine)
+  const canvasPxPerMm = contentImg.height / contentHeightMm;
+
+  // Converti breakpoint da px DOM a mm
+  const breakpointsMm = breakpointsPx.map((bp) => bp * pxToMm);
 
   const drawHeader = () => {
     pdf.addImage(headerDataUrl, 'PNG', 0, 0, pageWidth, headerHeightMm);
@@ -78,45 +132,60 @@ export async function generateQuotePdf({
     pdf.addImage(footerDataUrl, 'PNG', 0, footerY, pageWidth, footerHeightMm);
   };
 
-  // 2) Calcola quante pagine servono prima di disegnare
-  // Header su tutte le pagine, footer (firma/data) solo sull'ultima
-  const pxPerMm = contentImg.height / contentHeightMm;
-
-  // Pre-calcola le fette per sapere il numero totale di pagine
-  const slices: { offsetMm: number; sliceMm: number; startY: number }[] = [];
+  // 3) Pre-calcola le fette usando breakpoint intelligenti
+  const slices: { offsetMm: number; sliceMm: number }[] = [];
   {
-    let remaining = contentHeightMm;
-    let offset = 0;
-    let page = 0;
-    while (remaining > 0) {
-      const startY = headerHeightMm; // header su tutte le pagine
-      // Sull'ultima fetta lasciamo spazio per il footer
-      // Per capire se è l'ultima, verifichiamo se il contenuto rimanente entra
-      const availableWithoutFooter = pageHeight - startY;
+    let offsetMm = 0;
+    const totalMm = contentHeightMm;
+
+    while (offsetMm < totalMm) {
+      const startY = headerHeightMm;
+      const remaining = totalMm - offsetMm;
+
+      // Controlla se il contenuto rimanente entra con il footer (ultima pagina)
       const availableWithFooter = footerY - startY;
+      if (remaining <= availableWithFooter) {
+        // Ultima pagina: tutto il contenuto rimanente
+        slices.push({ offsetMm, sliceMm: remaining });
+        break;
+      }
 
-      // Se il contenuto rimanente entra con il footer, è l'ultima pagina
-      const isLastPage = remaining <= availableWithFooter;
-      const available = isLastPage ? availableWithFooter : availableWithoutFooter;
+      // Pagina intermedia: usa tutto lo spazio senza footer
+      const availableWithoutFooter = pageHeight - startY;
+      const maxCutMm = offsetMm + availableWithoutFooter;
 
-      const slice = Math.min(remaining, available);
-      slices.push({ offsetMm: offset, sliceMm: slice, startY });
-      offset += slice;
-      remaining -= slice;
-      page++;
+      // Trova il breakpoint sicuro più vicino (in mm)
+      const offsetPx = offsetMm * mmToPx;
+      const maxPx = availableWithoutFooter * mmToPx;
+      const safeCutPx = findSafeBreak(breakpointsPx, maxPx, offsetPx);
+      const safeCutMm = safeCutPx * pxToMm;
+
+      // Usa il taglio sicuro, ma non superare lo spazio disponibile
+      const actualCutMm = Math.min(safeCutMm, maxCutMm);
+      const sliceMm = actualCutMm - offsetMm;
+
+      if (sliceMm <= 0) {
+        // Fallback: se il blocco è più grande della pagina, taglia comunque
+        slices.push({ offsetMm, sliceMm: availableWithoutFooter });
+        offsetMm += availableWithoutFooter;
+      } else {
+        slices.push({ offsetMm, sliceMm });
+        offsetMm += sliceMm;
+      }
     }
   }
 
   const totalPages = slices.length;
 
-  // 3) Disegna ogni pagina
+  // 4) Disegna ogni pagina
   for (let i = 0; i < totalPages; i++) {
     if (i > 0) {
       pdf.addPage();
     }
 
-    const { offsetMm, sliceMm, startY } = slices[i];
+    const { offsetMm, sliceMm } = slices[i];
     const isLastPage = i === totalPages - 1;
+    const startY = headerHeightMm;
 
     // Header su tutte le pagine
     drawHeader();
@@ -126,9 +195,9 @@ export async function generateQuotePdf({
       drawFooter();
     }
 
-    // Coordinate sorgente in pixel
-    const srcY = offsetMm * pxPerMm;
-    const srcH = sliceMm * pxPerMm;
+    // Coordinate sorgente in pixel canvas
+    const srcY = offsetMm * canvasPxPerMm;
+    const srcH = sliceMm * canvasPxPerMm;
 
     // Canvas con solo la porzione necessaria
     const sliceCanvas = document.createElement('canvas');

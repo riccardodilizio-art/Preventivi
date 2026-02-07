@@ -14,7 +14,7 @@ export function QuoteContent({ data, calculations, contentRef }: QuoteContentPro
   return (
     <div ref={contentRef} className="px-10 py-6">
       {/* Descrizione */}
-      <div className="rich-text-content mb-6" style={{ overflow: 'visible' }}>
+      <div data-pdf-block className="rich-text-content mb-6" style={{ overflow: 'visible' }}>
         <div dangerouslySetInnerHTML={{ __html: data.serviceDescription }} />
       </div>
 
@@ -22,7 +22,7 @@ export function QuoteContent({ data, calculations, contentRef }: QuoteContentPro
       {data.services.length > 0 && (
         <div className="mb-6">
           {/* Intestazione tabella */}
-          <div className="flex justify-between text-sm font-medium text-black border-b-2 border-black pb-2">
+          <div data-pdf-block className="flex justify-between text-sm font-medium text-black border-b-2 border-black pb-2">
             <p>Servizio</p>
             <p className="w-40 text-right">Costo</p>
           </div>
@@ -30,7 +30,7 @@ export function QuoteContent({ data, calculations, contentRef }: QuoteContentPro
           {/* Righe servizi */}
           <div className="border-b border-black">
             {data.services.map((service, index) => (
-              <div key={index}>
+              <div key={index} data-pdf-block>
                 <ServiceRow service={service} />
               </div>
             ))}
@@ -39,7 +39,9 @@ export function QuoteContent({ data, calculations, contentRef }: QuoteContentPro
       )}
 
       {/* Totali */}
-      <TotalsSummary calculations={calculations} />
+      <div data-pdf-block>
+        <TotalsSummary calculations={calculations} />
+      </div>
     </div>
   );
 }
