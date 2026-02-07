@@ -9,7 +9,7 @@ interface TotalsSummaryProps {
 export const TotalsSummary = memo(function TotalsSummary({ calculations }: TotalsSummaryProps) {
   return (
     <div className="mt-7 flex justify-end">
-      <div className="rounded-lg border border-black px-5 py-10 min-w-[350px] overflow-hidden">
+      <div className="rounded-lg border border-black px-5 py-10 min-w-[350px]">
         <div className="flex justify-between text-sm">
           <span>Imponibile (Tasse)</span>
           <span className="font-medium">{formatEuroFromNumber(calculations.taxable)}</span>

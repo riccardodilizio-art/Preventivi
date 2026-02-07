@@ -39,7 +39,7 @@ export function QuoteContent({ data, calculations, descriptionRef, totalsRef }: 
       )}
 
       {/* Totali */}
-      <div ref={totalsRef}>
+      <div ref={totalsRef} className="pb-4">
         <TotalsSummary calculations={calculations} />
       </div>
     </div>
