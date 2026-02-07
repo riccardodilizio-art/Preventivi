@@ -139,28 +139,21 @@ export async function generateQuotePdf({
         0: { cellWidth: 'auto' },
         1: { cellWidth: 40, halign: 'right' },
       },
-      // Bordi: solo top su ogni riga body, bottom sull'ultima
       didParseCell: (data) => {
         if (data.section === 'body') {
-          // Bordo top sottile su ogni riga del body
-          data.cell.styles.lineWidth = { top: 0.15, bottom: 0, left: 0, right: 0 };
+          const isLastRow = data.row.index === tableBody.length - 1;
+          data.cell.styles.lineWidth = {
+            top: 0.15,
+            bottom: isLastRow ? 0.3 : 0,
+            left: 0,
+            right: 0,
+          };
           data.cell.styles.lineColor = [0, 0, 0];
         }
       },
-      // Disegna bordo inferiore della tabella e header/footer su ogni pagina
-      didDrawPage: (data) => {
-        // Header e footer su ogni nuova pagina
+      didDrawPage: () => {
         drawHeader();
         drawFooter();
-
-        // Bordo inferiore della tabella (sotto l'ultima riga visibile su questa pagina)
-        if (data.cursor) {
-          const tableLeft = marginX;
-          const tableRight = pageWidth - marginX;
-          pdf.setDrawColor(0, 0, 0);
-          pdf.setLineWidth(0.2);
-          pdf.line(tableLeft, data.cursor.y, tableRight, data.cursor.y);
-        }
       },
     });
 
