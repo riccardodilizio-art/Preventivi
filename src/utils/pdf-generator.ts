@@ -7,11 +7,13 @@ import { formatEuro } from '@/utils/formatting';
 import type { ServiceItem } from '@/types/quote';
 import type { Calculations } from '@/hooks/useQuoteCalculations';
 
-const captureElement = (element: HTMLElement): Promise<string> =>
+const captureElement = (element: HTMLElement, forceWidth?: number): Promise<string> =>
   toPng(element, {
     cacheBust: true,
     pixelRatio: PDF_CONFIG.PIXEL_RATIO,
     backgroundColor: PDF_CONFIG.BACKGROUND_COLOR,
+    width: forceWidth ?? element.scrollWidth,
+    height: element.scrollHeight,
   });
 
 interface GeneratePdfParams {
@@ -36,8 +38,13 @@ export async function generateQuotePdf({
   // 1) Cattura immagini di header, footer, descrizione e totali
   const headerDataUrl = await captureElement(headerElement);
   const footerDataUrl = await captureElement(footerElement);
-  const descriptionDataUrl = descriptionElement ? await captureElement(descriptionElement) : null;
-  const totalsDataUrl = totalsElement ? await captureElement(totalsElement) : null;
+  // Forza la larghezza della descrizione e totali alla larghezza visibile (rispettando il padding del padre)
+  const descriptionDataUrl = descriptionElement
+    ? await captureElement(descriptionElement, descriptionElement.clientWidth)
+    : null;
+  const totalsDataUrl = totalsElement
+    ? await captureElement(totalsElement, totalsElement.clientWidth)
+    : null;
 
   const headerImg = await loadImage(headerDataUrl);
   const footerImg = await loadImage(footerDataUrl);
