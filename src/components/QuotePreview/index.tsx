@@ -18,6 +18,7 @@ export function QuotePreview({ data, onBack }: QuotePreviewProps) {
   const headerRef = useRef<HTMLDivElement>(null);
   const footerRef = useRef<HTMLDivElement>(null);
   const descriptionRef = useRef<HTMLDivElement>(null);
+  const servicesRef = useRef<HTMLDivElement>(null);
   const totalsRef = useRef<HTMLDivElement>(null);
 
   const calculations = useQuoteCalculations(data.services);
@@ -37,9 +38,8 @@ export function QuotePreview({ data, onBack }: QuotePreviewProps) {
         headerElement: headerRef.current,
         footerElement: footerRef.current,
         descriptionElement: descriptionRef.current,
+        servicesElement: servicesRef.current,
         totalsElement: totalsRef.current,
-        services: data.services,
-        calculations,
       });
     } catch (err) {
       console.error('Errore generazione PDF:', err);
@@ -75,6 +75,7 @@ export function QuotePreview({ data, onBack }: QuotePreviewProps) {
             data={data}
             calculations={calculations}
             descriptionRef={descriptionRef}
+            servicesRef={servicesRef}
             totalsRef={totalsRef}
           />
 

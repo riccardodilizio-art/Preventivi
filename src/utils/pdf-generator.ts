@@ -1,11 +1,7 @@
 import jsPDF from 'jspdf';
-import autoTable from 'jspdf-autotable';
 import html2canvas from 'html2canvas';
 import { PDF_CONFIG } from '@/constants';
 import { loadImage } from '@/utils/image';
-import { formatEuro } from '@/utils/formatting';
-import type { ServiceItem } from '@/types/quote';
-import type { Calculations } from '@/hooks/useQuoteCalculations';
 
 const captureElement = async (element: HTMLElement): Promise<string> => {
     const canvas = await html2canvas(element, {
@@ -21,25 +17,16 @@ const captureElement = async (element: HTMLElement): Promise<string> => {
         windowHeight: element.scrollHeight,
 
         onclone: (_doc, clonedEl) => {
-            // ✅ forziamo un tema "safe" (niente var o oklch)
             const root = clonedEl as HTMLElement;
 
-            // forza testo e sfondo
             root.style.setProperty('color', '#000', 'important');
             root.style.setProperty('background', '#fff', 'important');
             root.style.setProperty('background-color', '#fff', 'important');
 
-            // forza anche sui figli per evitare ereditarietà da var(--foreground)
             root.querySelectorAll<HTMLElement>('*').forEach((el) => {
                 el.style.setProperty('color', '#000', 'important');
-
-                // se vuoi mantenere background grigi, commenta la riga sotto
                 el.style.setProperty('background-color', 'transparent', 'important');
-
-                // bordi sempre visibili
                 el.style.setProperty('border-color', '#000', 'important');
-
-                // niente filtri
                 el.style.setProperty('filter', 'none', 'important');
                 el.style.setProperty('text-shadow', 'none', 'important');
             });
@@ -54,9 +41,8 @@ interface GeneratePdfParams {
   headerElement: HTMLElement;
   footerElement: HTMLElement;
   descriptionElement: HTMLElement | null;
+  servicesElement: HTMLElement | null;
   totalsElement: HTMLElement | null;
-  services: ServiceItem[];
-  calculations: Calculations;
 }
 
 export async function generateQuotePdf({
@@ -64,15 +50,17 @@ export async function generateQuotePdf({
   headerElement,
   footerElement,
   descriptionElement,
+  servicesElement,
   totalsElement,
-  services,
-  calculations: _calculations,
 }: GeneratePdfParams): Promise<void> {
-  // 1) Cattura immagini di header, footer, descrizione e totali
+  // 1) Cattura immagini di tutti gli elementi
   const headerDataUrl = await captureElement(headerElement);
   const footerDataUrl = await captureElement(footerElement);
   const descriptionDataUrl = descriptionElement
     ? await captureElement(descriptionElement)
+    : null;
+  const servicesDataUrl = servicesElement
+    ? await captureElement(servicesElement)
     : null;
   const totalsDataUrl = totalsElement
     ? await captureElement(totalsElement)
@@ -85,12 +73,14 @@ export async function generateQuotePdf({
   const pageWidth = pdf.internal.pageSize.getWidth();
   const pageHeight = pdf.internal.pageSize.getHeight();
   const marginX = 10;
+  const contentWidth = pageWidth - marginX * 2;
 
   const headerHeightMm = (headerImg.height * pageWidth) / headerImg.width;
   const footerHeightMm = (footerImg.height * pageWidth) / footerImg.width;
 
   const contentStartY = headerHeightMm;
   const contentEndY = pageHeight - footerHeightMm;
+  const availableHeight = contentEndY - contentStartY;
 
   const drawHeader = () => {
     pdf.addImage(headerDataUrl, 'PNG', 0, 0, pageWidth, headerHeightMm);
@@ -100,131 +90,111 @@ export async function generateQuotePdf({
     pdf.addImage(footerDataUrl, 'PNG', 0, pageHeight - footerHeightMm, pageWidth, footerHeightMm);
   };
 
+  // Funzione per piazzare un'immagine con gestione automatica di page-break
+  // Se l'immagine è più alta dello spazio disponibile, la spezza su più pagine
+  const placeImage = (
+    dataUrl: string,
+    imgWidth: number,
+    imgHeight: number,
+    targetWidthMm: number,
+    xOffset: number,
+    cursor: number,
+  ): number => {
+    const targetHeightMm = (imgHeight * targetWidthMm) / imgWidth;
+
+    // Se entra nella pagina corrente, piazzala normalmente
+    if (cursor + targetHeightMm <= contentEndY) {
+      pdf.addImage(dataUrl, 'PNG', xOffset, cursor, targetWidthMm, targetHeightMm);
+      return cursor + targetHeightMm;
+    }
+
+    // Se è più piccola dello spazio disponibile su una pagina intera, vai a pagina nuova
+    if (targetHeightMm <= availableHeight) {
+      pdf.addPage();
+      drawHeader();
+      drawFooter();
+      pdf.addImage(dataUrl, 'PNG', xOffset, contentStartY, targetWidthMm, targetHeightMm);
+      return contentStartY + targetHeightMm;
+    }
+
+    // Se è più grande di una pagina, spezzala su più pagine usando clipping
+    let remainingHeight = targetHeightMm;
+    let sourceYOffset = 0;
+    let currentCursor = cursor;
+
+    while (remainingHeight > 0) {
+      const spaceOnPage = contentEndY - currentCursor;
+
+      if (spaceOnPage <= 0) {
+        pdf.addPage();
+        drawHeader();
+        drawFooter();
+        currentCursor = contentStartY;
+        continue;
+      }
+
+      const sliceHeight = Math.min(remainingHeight, spaceOnPage);
+
+      // Calcola la porzione sorgente in pixel
+      const scaleY = imgHeight / targetHeightMm;
+      const srcY = sourceYOffset * scaleY;
+      const srcH = sliceHeight * scaleY;
+
+      // Crea un canvas temporaneo per la porzione
+      const tempCanvas = document.createElement('canvas');
+      tempCanvas.width = imgWidth;
+      tempCanvas.height = Math.ceil(srcH);
+      const ctx = tempCanvas.getContext('2d')!;
+
+      const img = new Image();
+      img.src = dataUrl;
+
+      // Disegna solo la porzione necessaria
+      ctx.drawImage(img, 0, srcY, imgWidth, srcH, 0, 0, imgWidth, Math.ceil(srcH));
+
+      const sliceDataUrl = tempCanvas.toDataURL('image/png');
+      pdf.addImage(sliceDataUrl, 'PNG', xOffset, currentCursor, targetWidthMm, sliceHeight);
+
+      sourceYOffset += sliceHeight;
+      remainingHeight -= sliceHeight;
+      currentCursor += sliceHeight;
+
+      if (remainingHeight > 0) {
+        pdf.addPage();
+        drawHeader();
+        drawFooter();
+        currentCursor = contentStartY;
+      }
+    }
+
+    return currentCursor;
+  };
+
   // 2) Prima pagina: header + footer
   drawHeader();
   drawFooter();
 
   let cursorY = contentStartY;
 
-  // 3) Descrizione come immagine (ha il proprio px-10 quindi usa pageWidth)
+  // 3) Descrizione come immagine (full width, ha px-10 interno)
   if (descriptionDataUrl && descriptionElement) {
     const descImg = await loadImage(descriptionDataUrl);
-    const descHeightMm = (descImg.height * pageWidth) / descImg.width;
-
-    if (cursorY + descHeightMm > contentEndY) {
-      pdf.addPage();
-      drawHeader();
-      drawFooter();
-      cursorY = contentStartY;
-    }
-
-    pdf.addImage(descriptionDataUrl, 'PNG', 0, cursorY, pageWidth, descHeightMm);
-    cursorY += descHeightMm + 8;
+    cursorY = placeImage(descriptionDataUrl, descImg.width, descImg.height, pageWidth, 0, cursorY);
+    cursorY += 2;
   }
 
-  // 4) Tabella servizi con jspdf-autotable
-  if (services.length > 0) {
-    const subserviceRows = new Set<number>();
-    const tableBody: (string | { content: string; styles: Record<string, unknown> })[][] = [];
-    let rowIdx = 0;
-
-    for (const service of services) {
-      tableBody.push([
-        { content: service.description, styles: { fontStyle: 'bold' } },
-        {
-          content: formatEuro(service.cost),
-          styles: { fontStyle: 'bold', halign: 'right' as const },
-        },
-      ]);
-      rowIdx++;
-
-      if (service.subservices && service.subservices.length > 0) {
-        for (const sub of service.subservices) {
-          subserviceRows.add(rowIdx);
-          tableBody.push([
-            { content: sub.description, styles: { fontStyle: 'normal', fontSize: 9, textColor: [0, 0, 0] } },
-            { content: '', styles: {} },
-          ]);
-          rowIdx++;
-        }
-      }
-    }
-
-    autoTable(pdf, {
-      startY: cursorY,
-      margin: { left: marginX, right: marginX, top: contentStartY, bottom: footerHeightMm + 2 },
-      head: [['Servizio', 'Costo']],
-      body: tableBody,
-      theme: 'plain',
-      styles: {
-        fontSize: 10,
-        cellPadding: { top: 2.5, bottom: 2.5, left: 1.5, right: 1.5 },
-        lineColor: [0, 0, 0],
-        lineWidth: 0.2,
-        textColor: [0, 0, 0],
-        overflow: 'linebreak',
-      },
-      headStyles: {
-        fontStyle: 'bold',
-        fontSize: 10,
-        fillColor: [255, 255, 255],
-        textColor: [0, 0, 0],
-        lineWidth: { bottom: 0.5, top: 0, left: 0, right: 0 },
-        lineColor: [0, 0, 0],
-        cellPadding: { top: 2, bottom: 3, left: 1.5, right: 1.5 },
-      },
-      columnStyles: {
-        0: { cellWidth: 'auto' },
-        1: { cellWidth: 40, halign: 'right' },
-      },
-      didParseCell: (data) => {
-        if (data.section === 'body') {
-          const isLastRow = data.row.index === tableBody.length - 1;
-          data.cell.styles.lineWidth = {
-            top: 0.15,
-            bottom: isLastRow ? 0.3 : 0,
-            left: 0,
-            right: 0,
-          };
-          data.cell.styles.lineColor = [0, 0, 0];
-
-          if (subserviceRows.has(data.row.index) && data.column.index === 0) {
-            data.cell.styles.cellPadding = { top: 2, bottom: 2, left: 10, right: 1.5 };
-          }
-        }
-      },
-      didDrawCell: (data) => {
-        if (data.section === 'body' && data.column.index === 0 && subserviceRows.has(data.row.index)) {
-          pdf.setFontSize(9);
-          pdf.setTextColor(0, 0, 0);
-          pdf.text('•', data.cell.x + 5, data.cell.y + data.cell.contentHeight / 2 + data.cell.padding('top'));
-        }
-      },
-      didDrawPage: () => {
-        drawHeader();
-        drawFooter();
-      },
-    });
-
-    // eslint-disable-next-line @typescript-eslint/no-explicit-any
-    cursorY = (pdf as any).lastAutoTable?.finalY ?? cursorY + 20;
+  // 4) Tabella servizi come immagine
+  if (servicesDataUrl && servicesElement) {
+    const svcImg = await loadImage(servicesDataUrl);
+    // La tabella ha px-10 dal contenitore padre, quindi usiamo contentWidth con marginX
+    cursorY = placeImage(servicesDataUrl, svcImg.width, svcImg.height, contentWidth, marginX, cursorY);
+    cursorY += 4;
   }
 
   // 5) Totali come immagine
   if (totalsDataUrl && totalsElement) {
     const totImg = await loadImage(totalsDataUrl);
-    const totWidthMm = pageWidth - marginX * 2;
-    const totHeightMm = (totImg.height * totWidthMm) / totImg.width;
-
-    if (cursorY + totHeightMm + 8 > contentEndY) {
-      pdf.addPage();
-      drawHeader();
-      drawFooter();
-      cursorY = contentStartY;
-    }
-
-    pdf.addImage(totalsDataUrl, 'PNG', marginX, cursorY + 6, totWidthMm, totHeightMm);
-    cursorY += totHeightMm + 10;
+    cursorY = placeImage(totalsDataUrl, totImg.width, totImg.height, contentWidth, marginX, cursorY);
   }
 
   pdf.save(`Preventivo_${subject?.replace(/\s+/g, '_') || 'Documento'}.pdf`);
