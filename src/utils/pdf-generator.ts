@@ -1,6 +1,6 @@
 import jsPDF from 'jspdf';
 import autoTable from 'jspdf-autotable';
-import { toPng } from 'html-to-image';
+import html2canvas from 'html2canvas';
 import { PDF_CONFIG } from '@/constants';
 import { loadImage } from '@/utils/image';
 import { formatEuro } from '@/utils/formatting';
@@ -8,52 +8,13 @@ import type { ServiceItem } from '@/types/quote';
 import type { Calculations } from '@/hooks/useQuoteCalculations';
 
 const captureElement = async (element: HTMLElement): Promise<string> => {
-  // Salva stili originali
-  const saved = {
-    width: element.style.width,
-    maxWidth: element.style.maxWidth,
-    wordBreak: element.style.wordBreak,
-    overflowWrap: element.style.overflowWrap,
-    boxSizing: element.style.boxSizing,
-  };
-
-  // Forza larghezza e word-wrap inline - il clone di html-to-image
-  // non ha il contesto del padre e @layer CSS potrebbe non essere risolto
-  const rect = element.getBoundingClientRect();
-  element.style.width = `${rect.width}px`;
-  element.style.maxWidth = `${rect.width}px`;
-  element.style.wordBreak = 'break-word';
-  element.style.overflowWrap = 'break-word';
-  element.style.boxSizing = 'border-box';
-
-  // Forza gli stessi stili anche su tutti i figli diretti
-  const children = element.querySelectorAll<HTMLElement>('*');
-  const childSaved: { el: HTMLElement; ow: string; wb: string }[] = [];
-  children.forEach((child) => {
-    childSaved.push({ el: child, ow: child.style.overflowWrap, wb: child.style.wordBreak });
-    child.style.overflowWrap = 'break-word';
-    child.style.wordBreak = 'break-word';
+  const canvas = await html2canvas(element, {
+    scale: PDF_CONFIG.PIXEL_RATIO,
+    backgroundColor: PDF_CONFIG.BACKGROUND_COLOR,
+    useCORS: true,
+    logging: false,
   });
-
-  try {
-    const dataUrl = await toPng(element, {
-      cacheBust: true,
-      pixelRatio: PDF_CONFIG.PIXEL_RATIO,
-      backgroundColor: PDF_CONFIG.BACKGROUND_COLOR,
-    });
-    return dataUrl;
-  } finally {
-    // Ripristina stili originali
-    element.style.width = saved.width;
-    element.style.maxWidth = saved.maxWidth;
-    element.style.wordBreak = saved.wordBreak;
-    element.style.overflowWrap = saved.overflowWrap;
-    element.style.boxSizing = saved.boxSizing;
-    childSaved.forEach(({ el, ow, wb }) => {
-      el.style.overflowWrap = ow;
-      el.style.wordBreak = wb;
-    });
-  }
+  return canvas.toDataURL('image/png');
 };
 
 interface GeneratePdfParams {
@@ -91,7 +52,7 @@ export async function generateQuotePdf({
   const pdf = new jsPDF('p', 'mm', 'a4');
   const pageWidth = pdf.internal.pageSize.getWidth();
   const pageHeight = pdf.internal.pageSize.getHeight();
-  const marginX = 10; // margine laterale per il contenuto
+  const marginX = 10;
 
   const headerHeightMm = (headerImg.height * pageWidth) / headerImg.width;
   const footerHeightMm = (footerImg.height * pageWidth) / footerImg.width;
@@ -99,7 +60,6 @@ export async function generateQuotePdf({
   const contentStartY = headerHeightMm;
   const contentEndY = pageHeight - footerHeightMm;
 
-  // Funzioni per disegnare header e footer
   const drawHeader = () => {
     pdf.addImage(headerDataUrl, 'PNG', 0, 0, pageWidth, headerHeightMm);
   };
@@ -119,7 +79,6 @@ export async function generateQuotePdf({
     const descImg = await loadImage(descriptionDataUrl);
     const descHeightMm = (descImg.height * pageWidth) / descImg.width;
 
-    // Se la descrizione non sta nella pagina corrente, nuova pagina
     if (cursorY + descHeightMm > contentEndY) {
       pdf.addPage();
       drawHeader();
@@ -128,19 +87,16 @@ export async function generateQuotePdf({
     }
 
     pdf.addImage(descriptionDataUrl, 'PNG', 0, cursorY, pageWidth, descHeightMm);
-    cursorY += descHeightMm + 4; // 4mm spacing
+    cursorY += descHeightMm + 4;
   }
 
   // 4) Tabella servizi con jspdf-autotable
   if (services.length > 0) {
-    // Prepara i dati della tabella
-    // Traccia quali righe sono sotto-servizi per il rendering custom
     const subserviceRows = new Set<number>();
     const tableBody: (string | { content: string; styles: Record<string, unknown> })[][] = [];
     let rowIdx = 0;
 
     for (const service of services) {
-      // Riga servizio principale
       tableBody.push([
         { content: service.description, styles: { fontStyle: 'bold' } },
         {
@@ -150,7 +106,6 @@ export async function generateQuotePdf({
       ]);
       rowIdx++;
 
-      // Sotto-servizi come righe indentate
       if (service.subservices && service.subservices.length > 0) {
         for (const sub of service.subservices) {
           subserviceRows.add(rowIdx);
@@ -201,14 +156,12 @@ export async function generateQuotePdf({
           };
           data.cell.styles.lineColor = [0, 0, 0];
 
-          // Sotto-servizi: indentazione left per allineare il testo dopo il bullet
           if (subserviceRows.has(data.row.index) && data.column.index === 0) {
             data.cell.styles.cellPadding = { top: 2, bottom: 2, left: 10, right: 1.5 };
           }
         }
       },
       didDrawCell: (data) => {
-        // Disegna il bullet • manualmente per i sotto-servizi
         if (data.section === 'body' && data.column.index === 0 && subserviceRows.has(data.row.index)) {
           pdf.setFontSize(9);
           pdf.setTextColor(0, 0, 0);
@@ -221,7 +174,6 @@ export async function generateQuotePdf({
       },
     });
 
-    // Aggiorna il cursore dopo la tabella
     // eslint-disable-next-line @typescript-eslint/no-explicit-any
     cursorY = (pdf as any).lastAutoTable?.finalY ?? cursorY + 20;
   }
@@ -232,7 +184,6 @@ export async function generateQuotePdf({
     const totWidthMm = pageWidth - marginX * 2;
     const totHeightMm = (totImg.height * totWidthMm) / totImg.width;
 
-    // Se i totali non stanno nella pagina corrente, nuova pagina
     if (cursorY + totHeightMm + 4 > contentEndY) {
       pdf.addPage();
       drawHeader();

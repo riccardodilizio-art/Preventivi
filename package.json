@@ -4,7 +4,7 @@
   "private": true,
   "dependencies": {
     "@tailwindcss/vite": "^4.1.18",
-    "html-to-image": "^1.11.13",
+    "html2canvas": "^1.4.1",
     "jspdf": "^3.0.4",
     "jspdf-autotable": "^5.0.7",
     "lucide-react": "^0.487.0",
