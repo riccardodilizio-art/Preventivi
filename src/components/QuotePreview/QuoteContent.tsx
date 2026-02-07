@@ -15,7 +15,7 @@ export function QuoteContent({ data, calculations, descriptionRef, totalsRef }: 
   return (
     <>
       {/* Descrizione - wrapper con px-10 proprio così html-to-image cattura con la larghezza corretta */}
-      <div ref={descriptionRef} className="px-10 my-6 rich-text-content">
+      <div ref={descriptionRef} className="px-10 py-6 rich-text-content" style={{ overflow: 'visible' }}>
         <div dangerouslySetInnerHTML={{ __html: data.serviceDescription }} />
       </div>
 

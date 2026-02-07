@@ -13,6 +13,12 @@ const captureElement = async (element: HTMLElement): Promise<string> => {
         backgroundColor: '#ffffff',
         useCORS: true,
         logging: false,
+        scrollY: 0,
+        scrollX: 0,
+        width: element.scrollWidth,
+        height: element.scrollHeight,
+        windowWidth: element.scrollWidth,
+        windowHeight: element.scrollHeight,
 
         onclone: (_doc, clonedEl) => {
             // ✅ forziamo un tema "safe" (niente var o oklch)
@@ -113,7 +119,7 @@ export async function generateQuotePdf({
     }
 
     pdf.addImage(descriptionDataUrl, 'PNG', 0, cursorY, pageWidth, descHeightMm);
-    cursorY += descHeightMm + 4;
+    cursorY += descHeightMm + 8;
   }
 
   // 4) Tabella servizi con jspdf-autotable
@@ -210,15 +216,15 @@ export async function generateQuotePdf({
     const totWidthMm = pageWidth - marginX * 2;
     const totHeightMm = (totImg.height * totWidthMm) / totImg.width;
 
-    if (cursorY + totHeightMm + 4 > contentEndY) {
+    if (cursorY + totHeightMm + 8 > contentEndY) {
       pdf.addPage();
       drawHeader();
       drawFooter();
       cursorY = contentStartY;
     }
 
-    pdf.addImage(totalsDataUrl, 'PNG', marginX, cursorY + 2, totWidthMm, totHeightMm);
-    cursorY += totHeightMm + 4;
+    pdf.addImage(totalsDataUrl, 'PNG', marginX, cursorY + 6, totWidthMm, totHeightMm);
+    cursorY += totHeightMm + 10;
   }
 
   pdf.save(`Preventivo_${subject?.replace(/\s+/g, '_') || 'Documento'}.pdf`);
