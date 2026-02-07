@@ -7,14 +7,35 @@ import { formatEuro } from '@/utils/formatting';
 import type { ServiceItem } from '@/types/quote';
 import type { Calculations } from '@/hooks/useQuoteCalculations';
 
-const captureElement = (element: HTMLElement, forceWidth?: number): Promise<string> =>
-  toPng(element, {
+const captureElement = async (element: HTMLElement, constrainWidth = false): Promise<string> => {
+  // Se constrainWidth, forza la larghezza inline sull'elemento così il clone
+  // di html-to-image rispetta il word-wrap (il clone non ha il contesto del padre)
+  const prevWidth = element.style.width;
+  const prevWordWrap = element.style.wordWrap;
+  const prevOverflowWrap = element.style.overflowWrap;
+
+  if (constrainWidth) {
+    const computedWidth = element.getBoundingClientRect().width;
+    element.style.width = `${computedWidth}px`;
+    element.style.wordWrap = 'break-word';
+    element.style.overflowWrap = 'break-word';
+  }
+
+  const dataUrl = await toPng(element, {
     cacheBust: true,
     pixelRatio: PDF_CONFIG.PIXEL_RATIO,
     backgroundColor: PDF_CONFIG.BACKGROUND_COLOR,
-    width: forceWidth ?? element.scrollWidth,
-    height: element.scrollHeight,
   });
+
+  // Ripristina stili originali
+  if (constrainWidth) {
+    element.style.width = prevWidth;
+    element.style.wordWrap = prevWordWrap;
+    element.style.overflowWrap = prevOverflowWrap;
+  }
+
+  return dataUrl;
+};
 
 interface GeneratePdfParams {
   subject: string;
@@ -38,12 +59,12 @@ export async function generateQuotePdf({
   // 1) Cattura immagini di header, footer, descrizione e totali
   const headerDataUrl = await captureElement(headerElement);
   const footerDataUrl = await captureElement(footerElement);
-  // Forza la larghezza della descrizione e totali alla larghezza visibile (rispettando il padding del padre)
+  // Forza la larghezza sulla descrizione e totali così il clone mantiene il word-wrap
   const descriptionDataUrl = descriptionElement
-    ? await captureElement(descriptionElement, descriptionElement.clientWidth)
+    ? await captureElement(descriptionElement, true)
     : null;
   const totalsDataUrl = totalsElement
-    ? await captureElement(totalsElement, totalsElement.clientWidth)
+    ? await captureElement(totalsElement, true)
     : null;
 
   const headerImg = await loadImage(headerDataUrl);
