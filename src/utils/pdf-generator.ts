@@ -232,7 +232,7 @@ export async function generateQuotePdf({
       pdf.addPage();
     }
 
-    const { offsetMm, sliceMm } = slices[i];
+    const { offsetMm, sliceMm } = slices[i]!;
     const isLastPage = i === totalPages - 1;
     const startY = headerHeightMm;
 
