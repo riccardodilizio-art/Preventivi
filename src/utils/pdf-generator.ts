@@ -8,42 +8,47 @@ import type { ServiceItem } from '@/types/quote';
 import type { Calculations } from '@/hooks/useQuoteCalculations';
 
 const captureElement = async (element: HTMLElement): Promise<string> => {
-  // html2canvas 1.4.1 non supporta oklch (usato da Tailwind CSS 4).
-  // Convertiamo tutti i colori in rgb inline prima della cattura, poi ripristiniamo.
-  const allEls: HTMLElement[] = [element, ...element.querySelectorAll<HTMLElement>('*')];
-  const savedStyles: (string | null)[] = [];
+  const canvas = await html2canvas(element, {
+    scale: PDF_CONFIG.PIXEL_RATIO,
+    backgroundColor: PDF_CONFIG.BACKGROUND_COLOR,
+    useCORS: true,
+    logging: false,
+    onclone: (clonedDoc) => {
+      // html2canvas 1.4.1 non supporta oklch() (Tailwind CSS 4).
+      // 1) Sostituisci oklch() in tutti i <style> del clone con un fallback sicuro
+      clonedDoc.querySelectorAll('style').forEach((style) => {
+        if (style.textContent?.includes('oklch')) {
+          style.textContent = style.textContent.replace(
+            /oklch\([^)]*\)/g,
+            'rgb(0, 0, 0)',
+          );
+        }
+      });
 
-  for (const el of allEls) {
-    savedStyles.push(el.getAttribute('style'));
-    const cs = window.getComputedStyle(el);
-    el.style.color = cs.color;
-    el.style.backgroundColor = cs.backgroundColor;
-    el.style.borderTopColor = cs.borderTopColor;
-    el.style.borderRightColor = cs.borderRightColor;
-    el.style.borderBottomColor = cs.borderBottomColor;
-    el.style.borderLeftColor = cs.borderLeftColor;
-    el.style.outlineColor = cs.outlineColor;
-  }
+      // 2) Imposta colori rgb inline su tutti gli elementi del clone
+      //    (calcolati dal browser originale che supporta oklch)
+      const clonedEl = clonedDoc.body;
+      const origEls = [element, ...element.querySelectorAll<HTMLElement>('*')];
+      const clonedEls = [
+        clonedDoc.querySelector(`[data-html2canvas-clone]`) as HTMLElement || clonedEl,
+        ...clonedEl.querySelectorAll<HTMLElement>('*'),
+      ];
 
-  try {
-    const canvas = await html2canvas(element, {
-      scale: PDF_CONFIG.PIXEL_RATIO,
-      backgroundColor: PDF_CONFIG.BACKGROUND_COLOR,
-      useCORS: true,
-      logging: false,
-    });
-    return canvas.toDataURL('image/png');
-  } finally {
-    // Ripristina stili originali
-    allEls.forEach((el, i) => {
-      const original = savedStyles[i];
-      if (original !== null && original !== undefined) {
-        el.setAttribute('style', original);
-      } else {
-        el.removeAttribute('style');
-      }
-    });
-  }
+      // Match by index between original and cloned elements
+      origEls.forEach((origEl, i) => {
+        const cloneEl = clonedEls[i];
+        if (!cloneEl) return;
+        const cs = window.getComputedStyle(origEl);
+        cloneEl.style.color = cs.color;
+        cloneEl.style.backgroundColor = cs.backgroundColor;
+        cloneEl.style.borderTopColor = cs.borderTopColor;
+        cloneEl.style.borderRightColor = cs.borderRightColor;
+        cloneEl.style.borderBottomColor = cs.borderBottomColor;
+        cloneEl.style.borderLeftColor = cs.borderLeftColor;
+      });
+    },
+  });
+  return canvas.toDataURL('image/png');
 };
 
 interface GeneratePdfParams {
