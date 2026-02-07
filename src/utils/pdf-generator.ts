@@ -21,8 +21,6 @@ const captureElement = async (element: HTMLElement): Promise<string> => {
 
             // Rimuovi tutte le custom properties oklch dal :root clonato
             // per evitare che html2canvas tenti di parsare oklch()
-            const rootStyle = _doc.documentElement.style;
-            const rootComputed = _doc.documentElement;
             for (const sheet of Array.from(_doc.styleSheets)) {
               try {
                 for (const rule of Array.from(sheet.cssRules)) {
