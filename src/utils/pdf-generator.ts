@@ -8,43 +8,39 @@ import type { ServiceItem } from '@/types/quote';
 import type { Calculations } from '@/hooks/useQuoteCalculations';
 
 const captureElement = async (element: HTMLElement): Promise<string> => {
-  // Precalcola colori rgb dal DOM originale (il browser risolve oklch → rgb)
-  const origEls = [element, ...element.querySelectorAll<HTMLElement>('*')];
-  const rgbColors = origEls.map((el) => {
-    const cs = window.getComputedStyle(el);
-    return {
-      color: cs.color,
-      backgroundColor: cs.backgroundColor,
-      borderTopColor: cs.borderTopColor,
-      borderRightColor: cs.borderRightColor,
-      borderBottomColor: cs.borderBottomColor,
-      borderLeftColor: cs.borderLeftColor,
-    };
-  });
+    const canvas = await html2canvas(element, {
+        scale: PDF_CONFIG.PIXEL_RATIO,
+        backgroundColor: '#ffffff',
+        useCORS: true,
+        logging: false,
 
-  const canvas = await html2canvas(element, {
-    scale: PDF_CONFIG.PIXEL_RATIO,
-    backgroundColor: PDF_CONFIG.BACKGROUND_COLOR,
-    useCORS: true,
-    logging: false,
-    onclone: (_clonedDoc, clonedEl) => {
-      // html2canvas 1.4.1 non supporta oklch() (Tailwind CSS 4).
-      // Imposta colori rgb precalcolati come inline styles sul clone.
-      // Gli stili inline hanno priorità massima → html2canvas non parsa oklch.
-      const clonedEls = [clonedEl, ...clonedEl.querySelectorAll<HTMLElement>('*')];
-      clonedEls.forEach((el, i) => {
-        const colors = rgbColors[i];
-        if (!colors) return;
-        el.style.setProperty('color', colors.color, 'important');
-        el.style.setProperty('background-color', colors.backgroundColor, 'important');
-        el.style.setProperty('border-top-color', colors.borderTopColor, 'important');
-        el.style.setProperty('border-right-color', colors.borderRightColor, 'important');
-        el.style.setProperty('border-bottom-color', colors.borderBottomColor, 'important');
-        el.style.setProperty('border-left-color', colors.borderLeftColor, 'important');
-      });
-    },
-  });
-  return canvas.toDataURL('image/png');
+        onclone: (_doc, clonedEl) => {
+            // ✅ forziamo un tema "safe" (niente var o oklch)
+            const root = clonedEl as HTMLElement;
+
+            // forza testo e sfondo
+            root.style.setProperty('color', '#000', 'important');
+            root.style.setProperty('background', '#fff', 'important');
+            root.style.setProperty('background-color', '#fff', 'important');
+
+            // forza anche sui figli per evitare ereditarietà da var(--foreground)
+            root.querySelectorAll<HTMLElement>('*').forEach((el) => {
+                el.style.setProperty('color', '#000', 'important');
+
+                // se vuoi mantenere background grigi, commenta la riga sotto
+                el.style.setProperty('background-color', 'transparent', 'important');
+
+                // bordi sempre visibili
+                el.style.setProperty('border-color', '#000', 'important');
+
+                // niente filtri
+                el.style.setProperty('filter', 'none', 'important');
+                el.style.setProperty('text-shadow', 'none', 'important');
+            });
+        },
+    });
+
+    return canvas.toDataURL('image/png');
 };
 
 interface GeneratePdfParams {
