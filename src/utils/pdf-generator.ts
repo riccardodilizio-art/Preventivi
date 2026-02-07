@@ -89,7 +89,10 @@ export async function generateQuotePdf({
   // 4) Tabella servizi con jspdf-autotable
   if (services.length > 0) {
     // Prepara i dati della tabella
+    // Traccia quali righe sono sotto-servizi per il rendering custom
+    const subserviceRows = new Set<number>();
     const tableBody: (string | { content: string; styles: Record<string, unknown> })[][] = [];
+    let rowIdx = 0;
 
     for (const service of services) {
       // Riga servizio principale
@@ -100,14 +103,25 @@ export async function generateQuotePdf({
           styles: { fontStyle: 'bold', halign: 'right' as const },
         },
       ]);
+      rowIdx++;
 
       // Sotto-servizi come righe indentate
       if (service.subservices && service.subservices.length > 0) {
         for (const sub of service.subservices) {
+          subserviceRows.add(rowIdx);
           tableBody.push([
-            { content: `  •  ${sub.description}`, styles: { fontStyle: 'normal', fontSize: 9, textColor: [0, 0, 0] } },
+            {
+              content: sub.description,
+              styles: {
+                fontStyle: 'normal',
+                fontSize: 9,
+                textColor: [0, 0, 0],
+                cellPadding: { top: 2, bottom: 2, left: 10, right: 1.5 },
+              },
+            },
             { content: '', styles: {} },
           ]);
+          rowIdx++;
         }
       }
     }
@@ -149,6 +163,14 @@ export async function generateQuotePdf({
             right: 0,
           };
           data.cell.styles.lineColor = [0, 0, 0];
+        }
+      },
+      didDrawCell: (data) => {
+        // Disegna il bullet • manualmente per i sotto-servizi
+        if (data.section === 'body' && data.column.index === 0 && subserviceRows.has(data.row.index)) {
+          pdf.setFontSize(9);
+          pdf.setTextColor(0, 0, 0);
+          pdf.text('•', data.cell.x + 5, data.cell.y + data.cell.contentHeight / 2 + data.cell.padding('top'));
         }
       },
       didDrawPage: () => {
