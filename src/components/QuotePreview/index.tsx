@@ -16,14 +16,13 @@ export function QuotePreview({ data, onBack }: QuotePreviewProps) {
   const [isGenerating, setIsGenerating] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const documentRef = useRef<HTMLDivElement>(null);
-  const headerRef = useRef<HTMLDivElement>(null);
   const footerRef = useRef<HTMLDivElement>(null);
   const contentRef = useRef<HTMLDivElement>(null);
 
   const calculations = useQuoteCalculations(data.services);
 
   const handleDownloadPdf = useCallback(async () => {
-    if (!documentRef.current || !headerRef.current || !footerRef.current || !contentRef.current) {
+    if (!documentRef.current || !footerRef.current || !contentRef.current) {
       setError('Elementi non pronti per la generazione del PDF.');
       return;
     }
@@ -35,9 +34,8 @@ export function QuotePreview({ data, onBack }: QuotePreviewProps) {
       await generateQuotePdf({
         subject: data.subject,
         documentElement: documentRef.current,
-        headerElement: headerRef.current,
-        footerElement: footerRef.current,
         contentElement: contentRef.current,
+        footerElement: footerRef.current,
       });
     } catch (err) {
       console.error('Errore generazione PDF:', err);
@@ -65,9 +63,7 @@ export function QuotePreview({ data, onBack }: QuotePreviewProps) {
 
       <div className="max-w-4xl mx-auto p-6">
         <div ref={documentRef} className="bg-white shadow-lg">
-          <div ref={headerRef}>
-            <QuoteHeader data={data} />
-          </div>
+          <QuoteHeader data={data} />
 
           <QuoteContent
             data={data}

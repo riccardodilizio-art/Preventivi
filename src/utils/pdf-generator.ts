@@ -155,12 +155,10 @@ export interface GeneratePdfParams {
     subject: string;
     /** Wrapper che contiene TUTTO il documento (header + content + footer). */
     documentElement: HTMLElement;
-    /** Solo per misurare l'altezza dell'header nel DOM. */
-    headerElement: HTMLElement;
-    /** Solo per misurare l'altezza del footer nel DOM. */
-    footerElement: HTMLElement;
-    /** Usato per individuare i [data-pdf-block] e i punti di taglio sicuri. */
+    /** Primo elemento di contenuto: il suo top definisce dove finisce l'header (margini inclusi). */
     contentElement: HTMLElement;
+    /** Elemento footer: il suo top definisce dove inizia il footer. */
+    footerElement: HTMLElement;
 }
 
 /**
@@ -178,17 +176,23 @@ export interface GeneratePdfParams {
 export async function generateQuotePdf({
     subject,
     documentElement,
-    headerElement,
-    footerElement,
     contentElement,
+    footerElement,
 }: GeneratePdfParams): Promise<void> {
 
     // ------------------------------------------------------------------
-    // 1) Misura altezze DOM (px CSS) di header e footer PRIMA della cattura
+    // 1) Misura le posizioni DOM usando i TOP degli elementi adiacenti,
+    //    così margini collassati e gap tra siblings sono inclusi.
+    //    - header "finisce" dove inizia il contentElement (include mb-10 del box OGGETTO)
+    //    - footer "inizia" dove inizia il footerElement
     // ------------------------------------------------------------------
-    const headerDomH = headerElement.getBoundingClientRect().height;
-    const footerDomH = footerElement.getBoundingClientRect().height;
-    const docDomH    = documentElement.scrollHeight;
+    const docRect     = documentElement.getBoundingClientRect();
+    const contentRect = contentElement.getBoundingClientRect();
+    const footerRect  = footerElement.getBoundingClientRect();
+    const docDomH     = documentElement.scrollHeight;
+
+    const headerEndDomPx   = contentRect.top - docRect.top;
+    const footerStartDomPx = footerRect.top  - docRect.top;
 
     // ------------------------------------------------------------------
     // 2) Breakpoint sicuri relativi al TOP del documentElement (px CSS)
@@ -201,15 +205,14 @@ export async function generateQuotePdf({
     const docDataUrl = await captureElement(documentElement);
     const docImg     = await loadImage(docDataUrl);
 
-    // Fattore di scala canvas px ÷ DOM px (asse Y; X non serve perché
-    // l'immagine riempie sempre tutta la larghezza della pagina)
+    // Fattore di scala canvas px ÷ DOM px
     const scaleY = docImg.height / docDomH;
 
     // ------------------------------------------------------------------
     // 4) Zone dell'immagine in canvas px
     // ------------------------------------------------------------------
-    const headerEndCpx   = Math.round(headerDomH * scaleY);
-    const footerStartCpx = Math.round((docDomH - footerDomH) * scaleY);
+    const headerEndCpx   = Math.round(headerEndDomPx   * scaleY);
+    const footerStartCpx = Math.round(footerStartDomPx * scaleY);
     const contentStartCpx = headerEndCpx;
     const contentEndCpx   = footerStartCpx;
     const contentTotalCpx = contentEndCpx - contentStartCpx;
