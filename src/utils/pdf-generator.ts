@@ -245,24 +245,34 @@ export async function generateQuotePdf({
     {
         let offsetCpx = 0;
 
+        // Spazio disponibile calcolato una sola volta
+        const availLastMm  = footerYonPage - headerMm;
+        const availLastCpx = Math.round(availLastMm / mmPerCpx);
+        const availMidMm   = pageH - headerMm - bottomMargin;
+        const availMidCpx  = Math.round(availMidMm / mmPerCpx);
+
         while (offsetCpx < contentTotalCpx) {
             const remaining = contentTotalCpx - offsetCpx;
 
-            // Spazio disponibile sull'ultima pagina (tra header e footer)
-            const availLastMm  = footerYonPage - headerMm;
-            const availLastCpx = Math.round(availLastMm / mmPerCpx);
-
+            // Se il contenuto rimanente entra nell'ultima pagina (con footer), chiudi
             if (remaining <= availLastCpx) {
                 slices.push({ offsetCpx, heightCpx: remaining });
                 break;
             }
 
             // Pagina intermedia: spazio fino al fondo meno margine
-            const availMidMm  = pageH - headerMm - bottomMargin;
-            const availMidCpx = Math.round(availMidMm / mmPerCpx);
+            const safeCutCpx   = findSafeBreak(breakpointsCpx, availMidCpx, offsetCpx);
+            let actualCutCpx   = Math.min(safeCutCpx, offsetCpx + availMidCpx);
 
-            const safeCutCpx    = findSafeBreak(breakpointsCpx, availMidCpx, offsetCpx);
-            const actualCutCpx  = Math.min(safeCutCpx, offsetCpx + availMidCpx);
+            // FIX: se questa slice consumerebbe TUTTO il contenuto rimanente,
+            // la pagina diventerebbe l'ultima e servirebbe spazio per il footer.
+            // Ricalcola il taglio usando lo spazio dell'ultima pagina (con footer)
+            // per forzare lo split e lasciare il resto alla pagina successiva.
+            if (actualCutCpx >= contentTotalCpx) {
+                const safeLastCut = findSafeBreak(breakpointsCpx, availLastCpx, offsetCpx);
+                actualCutCpx      = Math.min(safeLastCut, offsetCpx + availLastCpx);
+            }
+
             const sliceHeightCpx = actualCutCpx - offsetCpx;
 
             if (sliceHeightCpx <= 0) {
