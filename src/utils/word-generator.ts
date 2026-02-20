@@ -1,7 +1,7 @@
 import {
   Document, Packer, Paragraph, TextRun, Table, TableRow, TableCell,
   ImageRun, AlignmentType, BorderStyle, WidthType, HeadingLevel,
-  ShadingType, TableLayoutType,
+  ShadingType, TableLayoutType, VerticalAlign,
 } from 'docx';
 import { saveAs } from 'file-saver';
 import { formatEuroFromNumber, formatDate, parseItalianNumber } from '@/utils/formatting';
@@ -58,60 +58,70 @@ const thinBorder = {
 } as const;
 
 /* ------------------------------------------------------------------ */
-/*  Parsifica l'HTML della descrizione in TextRun[]                    */
+/*  Parsifica l'HTML della descrizione in Paragraph[]                  */
+/*                                                                      */
+/*  Approccio: traccia lo stato di formattazione (bold, italic, etc.)  */
+/*  mentre scende ricorsivamente nel DOM. Ogni nodo testo genera un    */
+/*  TextRun con la formattazione accumulata fino a quel punto.         */
 /* ------------------------------------------------------------------ */
+interface FormatState {
+  bold?: boolean;
+  italics?: boolean;
+  underline?: boolean;
+}
+
 function parseHtmlToRuns(html: string): Paragraph[] {
   const div = document.createElement('div');
   div.innerHTML = html;
   const paragraphs: Paragraph[] = [];
 
-  function processNode(node: Node): TextRun[] {
+  /** Raccoglie TextRun da un nodo, accumulando la formattazione dal contesto */
+  function collectRuns(node: Node, fmt: FormatState): TextRun[] {
     const runs: TextRun[] = [];
+
     if (node.nodeType === Node.TEXT_NODE) {
       const text = node.textContent || '';
       if (text.trim()) {
-        runs.push(new TextRun({ text, font: FONT, size: PT(10) }));
+        runs.push(new TextRun({
+          text,
+          font: FONT,
+          size: PT(10),
+          bold: fmt.bold,
+          italics: fmt.italics,
+          underline: fmt.underline ? {} : undefined,
+        }));
       }
-    } else if (node.nodeType === Node.ELEMENT_NODE) {
-      const el = node as HTMLElement;
-      const tag = el.tagName.toLowerCase();
-      const childRuns: TextRun[] = [];
-      el.childNodes.forEach(child => childRuns.push(...processNode(child)));
-
-      for (const run of childRuns) {
-        const props: Record<string, unknown> = {};
-        if (tag === 'strong' || tag === 'b') props.bold = true;
-        if (tag === 'em' || tag === 'i') props.italics = true;
-        if (tag === 'u') props.underline = {};
-        // Re-create run with additional formatting
-        const text = (run as unknown as { options?: { text?: string } }).options?.text
-          ?? (run as unknown as { root?: unknown[] }).root?.[1] as string ?? '';
-        if (text) {
-          runs.push(new TextRun({
-            text,
-            font: FONT,
-            size: PT(10),
-            bold: props.bold as boolean | undefined,
-            italics: props.italics as boolean | undefined,
-            underline: props.underline as Record<string, unknown> | undefined,
-          }));
-        }
-      }
+      return runs;
     }
+
+    if (node.nodeType !== Node.ELEMENT_NODE) return runs;
+
+    const el = node as HTMLElement;
+    const tag = el.tagName.toLowerCase();
+
+    // Accumula formattazione: ogni tag aggiunge al contesto precedente
+    const childFmt: FormatState = { ...fmt };
+    if (tag === 'strong' || tag === 'b') childFmt.bold = true;
+    if (tag === 'em' || tag === 'i') childFmt.italics = true;
+    if (tag === 'u') childFmt.underline = true;
+
+    el.childNodes.forEach(child => runs.push(...collectRuns(child, childFmt)));
     return runs;
   }
 
-  // Process top-level children as separate paragraphs
+  // Processa i figli top-level come paragrafi separati
   div.childNodes.forEach(node => {
     if (node.nodeType === Node.ELEMENT_NODE) {
       const el = node as HTMLElement;
       const tag = el.tagName.toLowerCase();
+
+      // Liste: ogni <li> diventa un paragrafo con bullet
       if (tag === 'ul' || tag === 'ol') {
         el.querySelectorAll('li').forEach(li => {
-          const runs = processNode(li);
+          const runs = collectRuns(li, {});
           if (runs.length > 0) {
             paragraphs.push(new Paragraph({
-              children: [new TextRun({ text: '• ', font: FONT, size: PT(10) }), ...runs],
+              children: [new TextRun({ text: '\u2022 ', font: FONT, size: PT(10) }), ...runs],
               spacing: { after: 60 },
             }));
           }
@@ -119,7 +129,8 @@ function parseHtmlToRuns(html: string): Paragraph[] {
         return;
       }
     }
-    const runs = processNode(node);
+
+    const runs = collectRuns(node, {});
     if (runs.length > 0) {
       paragraphs.push(new Paragraph({ children: runs, spacing: { after: 100 } }));
     }
@@ -414,7 +425,7 @@ export async function generateQuoteWord({
           new TableCell({
             width: { size: HALF_W, type: WidthType.DXA },
             borders: noBorders,
-            verticalAlign: 'bottom' as unknown as undefined,
+            verticalAlign: VerticalAlign.BOTTOM,
             children: [
               new Paragraph({
                 spacing: { before: 200 },

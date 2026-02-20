@@ -3,8 +3,6 @@ import html2canvas from 'html2canvas';
 import { loadImage } from '@/utils/image';
 import { formatDate } from '@/utils/formatting';
 import type { QuoteData } from '@/types/quote';
-import type { Calculations } from '@/hooks/useQuoteCalculations';
-
 /* ------------------------------------------------------------------ */
 /*  Costanti layout (mm)                                              */
 /* ------------------------------------------------------------------ */
@@ -222,7 +220,6 @@ const FOOTER_TOTAL_H = 35; // altezza riservata al footer in mm
 /* ------------------------------------------------------------------ */
 export interface GeneratePdfParams {
   data: QuoteData;
-  calculations: Calculations;
   contentElement: HTMLElement;
   logoSrc: string;
   firmaSrc: string;
@@ -236,7 +233,6 @@ export interface GeneratePdfParams {
  */
 export async function generateQuotePdf({
   data,
-  calculations: _calculations,
   contentElement,
   logoSrc,
   firmaSrc,

@@ -35,7 +35,6 @@ export function QuotePreview({ data, onBack }: QuotePreviewProps) {
     try {
       await generateQuotePdf({
         data,
-        calculations,
         contentElement: contentRef.current,
         logoSrc: logo,
         firmaSrc: firma,
