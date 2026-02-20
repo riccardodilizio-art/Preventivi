@@ -170,8 +170,9 @@ export interface GeneratePdfParams {
  * - Ritaglia da quest'unica immagine le tre zone: header, content, footer.
  * - Divide il content in slice (una per pagina) rispettando i [data-pdf-block]
  *   per evitare tagli a metà riga.
- * - Su ogni pagina PDF disegna: header (crop dall'immagine) + content-slice.
- * - Sull'ultima pagina aggiunge il footer (crop dall'immagine), ancorato al fondo.
+ * - PAGINA 1: header + content-slice.
+ * - PAGINE SUCCESSIVE: solo content-slice (senza header ripetuto), più spazio utile.
+ * - ULTIMA PAGINA: aggiunge il footer ancorato al fondo.
  */
 export async function generateQuotePdf({
     subject,
@@ -236,23 +237,31 @@ export async function generateQuotePdf({
     const headerMm      = headerEndCpx   * mmPerCpx;
     const footerMm      = (docImg.height - footerStartCpx) * mmPerCpx;
     const footerYonPage = pageH - footerMm;     // posizione Y del footer nell'ultima pagina
+    const topMargin     = 10;                   // mm di margine superiore sulle pagine senza header
     const bottomMargin  = 8;                    // mm di respiro sulle pagine intermedie
 
     // ------------------------------------------------------------------
     // 6) Calcola le slice del content (in canvas px)
+    //
+    //    Pagina 1:       header + content               → spazio = pageH - headerMm - bottomMargin
+    //    Pagine 2..N-1:  solo content (no header)        → spazio = pageH - topMargin - bottomMargin
+    //    Ultima pagina:  content + footer                → spazio = footerYonPage - topMargin
+    //                    (se è anche la prima: footerYonPage - headerMm)
     // ------------------------------------------------------------------
     const slices: { offsetCpx: number; heightCpx: number }[] = [];
     {
         let offsetCpx = 0;
 
-        // Spazio disponibile calcolato una sola volta
-        const availLastMm  = footerYonPage - headerMm;
-        const availLastCpx = Math.round(availLastMm / mmPerCpx);
-        const availMidMm   = pageH - headerMm - bottomMargin;
-        const availMidCpx  = Math.round(availMidMm / mmPerCpx);
-
         while (offsetCpx < contentTotalCpx) {
-            const remaining = contentTotalCpx - offsetCpx;
+            const remaining  = contentTotalCpx - offsetCpx;
+            const isFirstSlice = slices.length === 0;
+
+            // Margine superiore: header sulla prima pagina, topMargin sulle successive
+            const sliceTopMm = isFirstSlice ? headerMm : topMargin;
+
+            // Spazio che resterebbe se questa fosse l'ultima pagina (con footer)
+            const availLastMm  = footerYonPage - sliceTopMm;
+            const availLastCpx = Math.round(availLastMm / mmPerCpx);
 
             // Se il contenuto rimanente entra nell'ultima pagina (con footer), chiudi
             if (remaining <= availLastCpx) {
@@ -261,13 +270,15 @@ export async function generateQuotePdf({
             }
 
             // Pagina intermedia: spazio fino al fondo meno margine
+            const availMidMm  = pageH - sliceTopMm - bottomMargin;
+            const availMidCpx = Math.round(availMidMm / mmPerCpx);
+
             const safeCutCpx   = findSafeBreak(breakpointsCpx, availMidCpx, offsetCpx);
             let actualCutCpx   = Math.min(safeCutCpx, offsetCpx + availMidCpx);
 
-            // FIX: se questa slice consumerebbe TUTTO il contenuto rimanente,
+            // Se questa slice consumerebbe TUTTO il contenuto rimanente,
             // la pagina diventerebbe l'ultima e servirebbe spazio per il footer.
-            // Ricalcola il taglio usando lo spazio dell'ultima pagina (con footer)
-            // per forzare lo split e lasciare il resto alla pagina successiva.
+            // Ricalcola il taglio con lo spazio dell'ultima pagina.
             if (actualCutCpx >= contentTotalCpx) {
                 const safeLastCut = findSafeBreak(breakpointsCpx, availLastCpx, offsetCpx);
                 actualCutCpx      = Math.min(safeLastCut, offsetCpx + availLastCpx);
@@ -289,23 +300,35 @@ export async function generateQuotePdf({
 
     // ------------------------------------------------------------------
     // 7) Render pagina per pagina
+    //    - Pagina 1: header + content
+    //    - Pagine successive: solo content (con topMargin)
+    //    - Ultima pagina: + footer ancorato al fondo
     // ------------------------------------------------------------------
     for (let i = 0; i < totalPages; i++) {
         if (i > 0) pdf.addPage();
 
         const { offsetCpx, heightCpx } = slices[i]!;
-        const isLastPage = i === totalPages - 1;
+        const isFirstPage = i === 0;
+        const isLastPage  = i === totalPages - 1;
 
-        // --- Header (ritagliato dalla singola immagine del documento) ---
-        const headerCanvas = cropImage(docImg, 0, 0, docImg.width, headerEndCpx);
-        pdf.addImage(headerCanvas.toDataURL('image/png'), 'PNG', 0, 0, pageW, headerMm);
-        releaseCanvas(headerCanvas);
+        // Y dove inizia il contenuto su questa pagina
+        let contentYmm: number;
+
+        if (isFirstPage) {
+            // --- Header solo sulla prima pagina ---
+            const headerCanvas = cropImage(docImg, 0, 0, docImg.width, headerEndCpx);
+            pdf.addImage(headerCanvas.toDataURL('image/png'), 'PNG', 0, 0, pageW, headerMm);
+            releaseCanvas(headerCanvas);
+            contentYmm = headerMm;
+        } else {
+            contentYmm = topMargin;
+        }
 
         // --- Content slice ---
         const srcY         = contentStartCpx + offsetCpx;
         const sliceMm      = heightCpx * mmPerCpx;
         const sliceCanvas  = cropImage(docImg, 0, srcY, docImg.width, heightCpx);
-        pdf.addImage(sliceCanvas.toDataURL('image/png'), 'PNG', 0, headerMm, pageW, sliceMm);
+        pdf.addImage(sliceCanvas.toDataURL('image/png'), 'PNG', 0, contentYmm, pageW, sliceMm);
         releaseCanvas(sliceCanvas);
 
         // --- Footer (solo sull'ultima pagina, ancorato al fondo) ---
