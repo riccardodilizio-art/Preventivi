@@ -2,10 +2,14 @@ import { useRef, useState, useCallback } from 'react';
 import type { QuoteData } from '@/types/quote';
 import { useQuoteCalculations } from '@/hooks/useQuoteCalculations';
 import { generateQuotePdf } from '@/utils/pdf-generator';
+import { generateQuoteWord } from '@/utils/word-generator';
 import { PreviewToolbar } from './PreviewToolbar';
+import type { GeneratingState } from './PreviewToolbar';
 import { QuoteHeader } from './QuoteHeader';
 import { QuoteContent } from './QuoteContent';
 import { QuoteFooter } from './QuoteFooter';
+import logo from '@/image/logo.png';
+import firma from '@/image/firma.png';
 
 interface QuotePreviewProps {
   data: QuoteData;
@@ -13,44 +17,63 @@ interface QuotePreviewProps {
 }
 
 export function QuotePreview({ data, onBack }: QuotePreviewProps) {
-  const [isGenerating, setIsGenerating] = useState(false);
+  const [generatingState, setGeneratingState] = useState<GeneratingState>('idle');
   const [error, setError] = useState<string | null>(null);
-  const documentRef = useRef<HTMLDivElement>(null);
-  const footerRef = useRef<HTMLDivElement>(null);
   const contentRef = useRef<HTMLDivElement>(null);
 
   const calculations = useQuoteCalculations(data.services);
 
   const handleDownloadPdf = useCallback(async () => {
-    if (!documentRef.current || !footerRef.current || !contentRef.current) {
+    if (!contentRef.current) {
       setError('Elementi non pronti per la generazione del PDF.');
       return;
     }
 
-    setIsGenerating(true);
+    setGeneratingState('pdf');
     setError(null);
 
     try {
       await generateQuotePdf({
-        subject: data.subject,
-        documentElement: documentRef.current,
+        data,
+        calculations,
         contentElement: contentRef.current,
-        footerElement: footerRef.current,
+        logoSrc: logo,
+        firmaSrc: firma,
       });
     } catch (err) {
       console.error('Errore generazione PDF:', err);
       setError('Si è verificato un errore durante la generazione del PDF. Riprova.');
     } finally {
-      setIsGenerating(false);
+      setGeneratingState('idle');
     }
-  }, [data.subject, data.services, calculations]);
+  }, [data, calculations]);
+
+  const handleDownloadWord = useCallback(async () => {
+    setGeneratingState('word');
+    setError(null);
+
+    try {
+      await generateQuoteWord({
+        data,
+        calculations,
+        logoSrc: logo,
+        firmaSrc: firma,
+      });
+    } catch (err) {
+      console.error('Errore generazione Word:', err);
+      setError('Si è verificato un errore durante la generazione del documento Word. Riprova.');
+    } finally {
+      setGeneratingState('idle');
+    }
+  }, [data, calculations]);
 
   return (
     <div className="min-h-screen bg-gray-100">
       <PreviewToolbar
-        isGenerating={isGenerating}
+        generatingState={generatingState}
         onBack={onBack}
-        onDownload={handleDownloadPdf}
+        onDownloadPdf={handleDownloadPdf}
+        onDownloadWord={handleDownloadWord}
       />
 
       {error && (
@@ -62,7 +85,7 @@ export function QuotePreview({ data, onBack }: QuotePreviewProps) {
       )}
 
       <div className="max-w-4xl mx-auto p-6">
-        <div ref={documentRef} className="bg-white shadow-lg">
+        <div className="bg-white shadow-lg">
           <QuoteHeader data={data} />
 
           <QuoteContent
@@ -71,9 +94,7 @@ export function QuotePreview({ data, onBack }: QuotePreviewProps) {
             contentRef={contentRef}
           />
 
-          <div ref={footerRef}>
-            <QuoteFooter data={data} />
-          </div>
+          <QuoteFooter data={data} />
         </div>
       </div>
     </div>
