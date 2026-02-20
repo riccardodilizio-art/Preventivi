@@ -131,6 +131,26 @@ function parseHtmlToRuns(html: string): Paragraph[] {
 }
 
 /* ------------------------------------------------------------------ */
+/*  Costanti layout (twips / DXA)                                      */
+/* ------------------------------------------------------------------ */
+// A4 = 11906 twips wide. Margins: 700 left + 700 right = 1400
+const PAGE_W_DXA = 11906;
+const MARGIN_DXA = 700;
+const CONTENT_W_DXA = PAGE_W_DXA - MARGIN_DXA * 2; // 10506
+
+// Colonne tabella servizi (70% / 30%)
+const SVC_COL1 = Math.round(CONTENT_W_DXA * 0.7);  // 7354
+const SVC_COL2 = CONTENT_W_DXA - SVC_COL1;          // 3152
+
+// Colonne tabella totali (60% / 40% di ~45% pagina)
+const TOT_TABLE_W = Math.round(CONTENT_W_DXA * 0.45); // ~4728
+const TOT_COL1 = Math.round(TOT_TABLE_W * 0.6);
+const TOT_COL2 = TOT_TABLE_W - TOT_COL1;
+
+// Colonne header e footer (50% / 50%)
+const HALF_W = Math.round(CONTENT_W_DXA / 2);
+
+/* ------------------------------------------------------------------ */
 /*  Interfaccia pubblica                                               */
 /* ------------------------------------------------------------------ */
 export interface GenerateWordParams {
@@ -157,13 +177,14 @@ export async function generateQuoteWord({
 
   // 2) Header: logo + company info (tabella senza bordi a 2 colonne)
   const headerTable = new Table({
-    width: { size: 100, type: WidthType.PERCENTAGE },
+    width: { size: CONTENT_W_DXA, type: WidthType.DXA },
     layout: TableLayoutType.FIXED,
+    columnWidths: [HALF_W, CONTENT_W_DXA - HALF_W],
     rows: [
       new TableRow({
         children: [
           new TableCell({
-            width: { size: 50, type: WidthType.PERCENTAGE },
+            width: { size: HALF_W, type: WidthType.DXA },
             borders: noBorders,
             children: [
               new Paragraph({
@@ -178,7 +199,7 @@ export async function generateQuoteWord({
             ],
           }),
           new TableCell({
-            width: { size: 50, type: WidthType.PERCENTAGE },
+            width: { size: CONTENT_W_DXA - HALF_W, type: WidthType.DXA },
             borders: noBorders,
             children: [
               new Paragraph({
@@ -217,11 +238,12 @@ export async function generateQuoteWord({
 
   // 4) Box oggetto (sfondo grigio)
   const subjectTable = new Table({
-    width: { size: 100, type: WidthType.PERCENTAGE },
+    width: { size: CONTENT_W_DXA, type: WidthType.DXA },
     rows: [
       new TableRow({
         children: [
           new TableCell({
+            width: { size: CONTENT_W_DXA, type: WidthType.DXA },
             borders: {
               top: { style: BorderStyle.SINGLE, size: 1, color: 'DDDDDD' },
               bottom: { style: BorderStyle.SINGLE, size: 1, color: 'DDDDDD' },
@@ -247,7 +269,7 @@ export async function generateQuoteWord({
   // 5) Descrizione servizio (parsifica HTML)
   const descriptionParagraphs = parseHtmlToRuns(data.serviceDescription);
 
-  // 6) Tabella servizi
+  // 6) Tabella servizi con larghezze fisse in DXA
   const serviceRows: TableRow[] = [];
 
   // Intestazione
@@ -255,14 +277,14 @@ export async function generateQuoteWord({
     new TableRow({
       children: [
         new TableCell({
-          width: { size: 70, type: WidthType.PERCENTAGE },
+          width: { size: SVC_COL1, type: WidthType.DXA },
           borders: { top: thinBorder, bottom: { style: BorderStyle.SINGLE, size: 2, color: '000000' }, left: noBorders.left, right: noBorders.right },
           children: [new Paragraph({
             children: [new TextRun({ text: 'Servizio', font: FONT, size: PT(9), bold: true })],
           })],
         }),
         new TableCell({
-          width: { size: 30, type: WidthType.PERCENTAGE },
+          width: { size: SVC_COL2, type: WidthType.DXA },
           borders: { top: thinBorder, bottom: { style: BorderStyle.SINGLE, size: 2, color: '000000' }, left: noBorders.left, right: noBorders.right },
           children: [new Paragraph({
             alignment: AlignmentType.RIGHT,
@@ -292,7 +314,7 @@ export async function generateQuoteWord({
         descChildren.push(new Paragraph({
           spacing: { before: 40 },
           indent: { left: 360 },
-          children: [new TextRun({ text: `• ${sub.description}`, font: FONT, size: PT(9) })],
+          children: [new TextRun({ text: `\u2022 ${sub.description}`, font: FONT, size: PT(9) })],
         }));
       }
     }
@@ -301,11 +323,13 @@ export async function generateQuoteWord({
       new TableRow({
         children: [
           new TableCell({
+            width: { size: SVC_COL1, type: WidthType.DXA },
             borders: { top: thinBorder, bottom: thinBorder, left: noBorders.left, right: noBorders.right },
             margins: { top: 60, bottom: 60 },
             children: descChildren,
           }),
           new TableCell({
+            width: { size: SVC_COL2, type: WidthType.DXA },
             borders: { top: thinBorder, bottom: thinBorder, left: noBorders.left, right: noBorders.right },
             margins: { top: 60, bottom: 60 },
             children: [
@@ -325,8 +349,9 @@ export async function generateQuoteWord({
   }
 
   const servicesTable = new Table({
-    width: { size: 100, type: WidthType.PERCENTAGE },
+    width: { size: CONTENT_W_DXA, type: WidthType.DXA },
     layout: TableLayoutType.FIXED,
+    columnWidths: [SVC_COL1, SVC_COL2],
     rows: serviceRows,
   });
 
@@ -345,6 +370,7 @@ export async function generateQuoteWord({
     return new TableRow({
       children: [
         new TableCell({
+          width: { size: TOT_COL1, type: WidthType.DXA },
           borders,
           margins: { left: 100, right: 100, top: 40, bottom: 40 },
           children: [new Paragraph({
@@ -352,6 +378,7 @@ export async function generateQuoteWord({
           })],
         }),
         new TableCell({
+          width: { size: TOT_COL2, type: WidthType.DXA },
           borders,
           margins: { left: 100, right: 100, top: 40, bottom: 40 },
           children: [new Paragraph({
@@ -364,8 +391,10 @@ export async function generateQuoteWord({
   }
 
   const totalsTable = new Table({
-    width: { size: 45, type: WidthType.PERCENTAGE },
+    width: { size: TOT_TABLE_W, type: WidthType.DXA },
     layout: TableLayoutType.FIXED,
+    columnWidths: [TOT_COL1, TOT_COL2],
+    alignment: AlignmentType.RIGHT,
     rows: [
       summaryRow('Imponibile (Tasse)', formatEuroFromNumber(calculations.taxable)),
       summaryRow('Imponibile (non sogg. a Tasse)', formatEuroFromNumber(calculations.nonTaxable)),
@@ -376,14 +405,16 @@ export async function generateQuoteWord({
 
   // 8) Footer: location/data + firma
   const footerTable = new Table({
-    width: { size: 100, type: WidthType.PERCENTAGE },
+    width: { size: CONTENT_W_DXA, type: WidthType.DXA },
     layout: TableLayoutType.FIXED,
+    columnWidths: [HALF_W, CONTENT_W_DXA - HALF_W],
     rows: [
       new TableRow({
         children: [
           new TableCell({
-            width: { size: 50, type: WidthType.PERCENTAGE },
+            width: { size: HALF_W, type: WidthType.DXA },
             borders: noBorders,
+            verticalAlign: 'bottom' as unknown as undefined,
             children: [
               new Paragraph({
                 spacing: { before: 200 },
@@ -395,7 +426,7 @@ export async function generateQuoteWord({
             ],
           }),
           new TableCell({
-            width: { size: 50, type: WidthType.PERCENTAGE },
+            width: { size: CONTENT_W_DXA - HALF_W, type: WidthType.DXA },
             borders: noBorders,
             children: [
               new Paragraph({
@@ -428,7 +459,7 @@ export async function generateQuoteWord({
     sections: [{
       properties: {
         page: {
-          margin: { top: 600, bottom: 500, left: 700, right: 700 },
+          margin: { top: 600, bottom: 500, left: MARGIN_DXA, right: MARGIN_DXA },
         },
       },
       children: [
@@ -439,16 +470,10 @@ export async function generateQuoteWord({
         ...descriptionParagraphs,
         new Paragraph({ spacing: { after: 100 }, children: [] }),
         servicesTable,
-        new Paragraph({ spacing: { after: 100 }, children: [] }),
-        // Paragrafo vuoto per spingere totali a destra
-        new Paragraph({
-          alignment: AlignmentType.RIGHT,
-          spacing: { after: 60 },
-          children: [],
-        }),
+        new Paragraph({ spacing: { after: 200 }, children: [] }),
         totalsTable,
         new Paragraph({
-          spacing: { after: 40 },
+          spacing: { before: 80, after: 40 },
           children: [new TextRun({ text: 'Importi espressi in Euro.', font: FONT, size: PT(8) })],
           alignment: AlignmentType.RIGHT,
         }),
